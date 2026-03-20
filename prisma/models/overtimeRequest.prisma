@@ -1,7 +1,7 @@
 model OvertimeRequest {
   id         String     @id @default(uuid(7))
   userId     String     @map("user_id")
-  jobId      String?    @map("job_id")
+  jobId      String    @map("job_id")
   date       DateTime   @map("date") // ngày OT
   startTime  DateTime   @map("start_time") // bắt đầu
   endTime    DateTime   @map("end_time") // kết thúc
@@ -15,6 +15,6 @@ model OvertimeRequest {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   approver  User?    @relation(fields: [approvedBy], references: [id], onDelete: Cascade, name: "OvertimeRequestApprover")
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  job       Job?     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
 }

@@ -21,9 +21,9 @@ model Attendance {
   checkInMeta  Json?     @map("check_in_meta")
   checkOutMeta Json?     @map("check_out_meta")
   userId       String    @map("user_id")
-  jobId        String?   @map("job_id")
-  user         User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  job          Job?      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  jobId        String   @map("job_id")
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job          Job      @relation(fields: [jobId], references: [id], onDelete: Cascade)
   createdAt    DateTime  @default(now()) @map("created_at")
   updatedAt    DateTime  @updatedAt @map("updated_at")
 }

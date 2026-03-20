@@ -1,7 +1,7 @@
 model LeaveRequest {
   id        String     @id @default(uuid(7))
   userId    String     @map("user_id")
-  jobId     String?    @map("job_id")
+  jobId     String    @map("job_id")
   startDate DateTime   @map("start_date")
   endDate   DateTime   @map("end_date")
   leaveType LeaveType  @default(OTHER) @map("leave_type")
@@ -16,6 +16,6 @@ model LeaveRequest {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   approver  User?    @relation(fields: [approvedBy], references: [id], onDelete: SetNull, name: "LeaveRequestApprover")
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  job       Job?     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job       Job     @relation(fields: [jobId], references: [id], onDelete: Cascade)
 }   
