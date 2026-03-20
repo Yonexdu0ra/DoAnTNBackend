@@ -1,0 +1,13 @@
+model Session {
+  id        String   @id @default(uuid(7))
+  userId    String   @map("user_id")
+  token     String   @unique
+  expiresAt DateTime @map("expires_at")
+
+  ipAddress String @map("ip_address") @db.VarChar(45) // Lưu địa chỉ IP của phiên đăng nhập, có thể dùng để phát hiện các hoạt động đáng ngờ
+
+  // time stamps
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

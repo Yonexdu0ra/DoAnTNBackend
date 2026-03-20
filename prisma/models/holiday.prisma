@@ -1,0 +1,13 @@
+model Holiday {
+  id          String      @id @default(uuid(7))
+  name        String      @db.VarChar(255)
+  startDate        DateTime @db.Date @map("start_date")
+  endDate          DateTime @db.Date @map("end_date")
+
+  // ngày nghỉ lễ có phải là ngày nghỉ có lương hay không
+  isPaid      Boolean     @default(false) @map("is_paid")
+  type        HolidayType @default(OTHER) @map("holiday_type")
+  description String?     @db.Text
+  createdAt   DateTime    @default(now()) @map("created_at")
+  updatedAt   DateTime    @updatedAt @map("updated_at")
+}

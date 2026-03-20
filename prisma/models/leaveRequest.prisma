@@ -1,0 +1,21 @@
+model LeaveRequest {
+  id        String     @id @default(uuid(7))
+  userId    String     @map("user_id")
+  jobId     String?    @map("job_id")
+  startDate DateTime   @map("start_date")
+  endDate   DateTime   @map("end_date")
+  leaveType LeaveType  @default(OTHER) @map("leave_type")
+  reason    String?    @db.Text
+  status    StatusType @default(PENDING) @map("status")
+  reply     String?    @db.Text // phản hồi từ người duyệt đơn, có thể là lý do từ chối hoặc ghi chú khi duyệt đơn
+
+  // lưu thông tin về người duyệt đơn nghỉ phép hoăc từ chối, có thể là manager của công việc hoặc admin
+  approvedBy String?   @map("approver_id")
+  approverAt DateTime? @map("approver_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  approver  User?    @relation(fields: [approvedBy], references: [id], onDelete: SetNull, name: "LeaveRequestApprover")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job       Job?     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}   

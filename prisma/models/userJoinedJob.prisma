@@ -1,0 +1,14 @@
+model UserJoinedJob {
+  id        String     @id @default(uuid(7))
+  userId    String     @map("user_id")
+  jobId     String     @map("job_id")
+  // trang thái giam gia công việc của người dùng 
+  status    StatusType @default(PENDING) @map("status")
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job  Job  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, jobId], name: "idx_user_job")
+}

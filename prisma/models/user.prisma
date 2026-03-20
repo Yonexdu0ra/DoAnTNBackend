@@ -1,0 +1,27 @@
+model User {
+  id               String    @id @default(uuid(7))
+  email            String    @unique @db.VarChar(255)
+  phone            String    @unique @db.VarChar(20)
+  code             String    @unique @db.VarChar(20)
+  password         String
+  // Thêm trường biometricEnabled để lưu trạng thái đăng nhập bằng sinh trắc học
+  biometricEnabled Boolean   @default(false) @map("biometric_enabled")
+  profile          Profile?
+  role             Role      @default(EMPLOYEE)
+  // sort delete
+  deletedAt        DateTime? @map("deleted_at")
+
+  // time stamps
+  createdAt DateTime     @default(now()) @map("created_at")
+  updatedAt DateTime     @updatedAt @map("updated_at")
+  sessions  Session[]
+  devices   UserDevice[]
+
+  jobManagers              JobManager[]
+  userJoinedJobs           UserJoinedJob[]
+  leaveRequests            LeaveRequest[]
+  leaveRequestsApproved    LeaveRequest[]    @relation("LeaveRequestApprover")
+  overtimeRequests         OvertimeRequest[]
+  overtimeRequestsApproved OvertimeRequest[] @relation("OvertimeRequestApprover")
+  attendances              Attendance[]
+}

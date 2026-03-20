@@ -1,0 +1,20 @@
+model OvertimeRequest {
+  id         String     @id @default(uuid(7))
+  userId     String     @map("user_id")
+  jobId      String?    @map("job_id")
+  date       DateTime   @map("date") // ngày OT
+  startTime  DateTime   @map("start_time") // bắt đầu
+  endTime    DateTime   @map("end_time") // kết thúc
+  minutes    Int        @map("minutes") // tổng phút OT
+  reason     String?    @db.Text
+  status     StatusType @default(PENDING) @map("status")
+  reply      String?    @db.Text // phản hồi từ người duyệt đơn, có thể là lý do từ chối hoặc ghi chú khi duyệt đơn
+  approvedBy String?    @map("approver_id")
+  approverAt DateTime?  @map("approver_at")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  approver  User?    @relation(fields: [approvedBy], references: [id], onDelete: Cascade, name: "OvertimeRequestApprover")
+  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job       Job?     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+}

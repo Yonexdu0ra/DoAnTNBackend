@@ -1,0 +1,33 @@
+model Job {
+  id          String  @id @default(uuid(7))
+  title       String  @db.VarChar(255)
+  description String? @db.Text
+
+  address             String?  @db.VarChar(255)
+  workStartTime       DateTime @map("work_start_time") @db.Time()
+  // thời gian chấm có thể chấm công sớm 
+  earlyCheckInMinutes Int      @default(15) @map("early_check_in_minutes")
+  // thời gian chấm công muộn có thể cho phép chấm công khi đi muộn
+  lateCheckInMinutes  Int      @default(15) @map("late_check_in_minutes")
+
+  workEndTime          DateTime @map("work_end_time") @db.Time()
+  // tương tự với check-in, có thể cho phép check-out sớm hoặc muộn so với thời gian kết thúc công việc
+  earlyCheckOutMinutes Int      @default(15) @map("early_check_out_minutes")
+  lateCheckOutMinutes  Int      @default(15) @map("late_check_out_minutes")
+
+  // trường để lưu tọa độ địa lý của địa điểm làm việc, có thể dùng để tính toán khoảng cách giữa người dùng và địa điểm làm việc khi check-in
+  latitude  Float
+  longitude Float
+  radius    Float @default(50)
+  // time stamps
+
+  maxMembers Int @default(0) @map("max_members") 
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  manager          JobManager[]      @relation("JobManagers")
+  userJoinedJobs   UserJoinedJob[]
+  leaveRequests    LeaveRequest[]
+  overtimeRequests OvertimeRequest[]
+  attendances      Attendance[]
+}

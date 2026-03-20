@@ -1,0 +1,29 @@
+
+
+
+model Attendance {
+  id String @id @default(uuid(7))
+
+  // ngày chấm công
+  date   DateTime   @db.Date
+  // trạng thái chấm công 
+  status StatusType @default(PENDING)
+
+  type        AttendanceType
+  // trạng thái nghi ngờ lan lận
+  isFraud     Boolean        @default(false) @map("is_fraud")
+  // lý do nghi ngờ lan lận nếu có
+  fraudReason String?        @map("fraud_reason") @db.Text
+
+  checkInAt    DateTime? @map("check_in_at")
+  checkOutAt   DateTime? @map("check_out_at")
+  // lưu thông tin về thiết bị, ip, vị trí khi chấm công
+  checkInMeta  Json?     @map("check_in_meta")
+  checkOutMeta Json?     @map("check_out_meta")
+  userId       String    @map("user_id")
+  jobId        String?   @map("job_id")
+  user         User?      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  job          Job?      @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+}

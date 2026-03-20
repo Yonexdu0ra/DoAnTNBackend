@@ -1,0 +1,17 @@
+model UserDevice {
+  id         String   @id @default(uuid(7))
+  userId     String   @map("user_id")
+  deviceId   String   @map("device_id") @db.VarChar(255)
+  // trường platform để lưu loại thiết bị (ví dụ: "iOS", "Android", "Web")
+  platform   String   @map("device_type") @db.VarChar(50)
+  deviceName String   @default("Unknown Device") @map("device_name") @db.VarChar(255)
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fcmToken   String?  @map("fcm_token") // Lưu token FCM để gửi thông báo đẩy đến thiết bị, có thể null nếu người dùng chưa đăng nhập trên thiết bị đó hoặc đã đăng xuất
+  // Lưu địa chỉ IP của thiết bị khi đăng nhập, có thể dùng để phát hiện các hoạt động đáng ngờ
+  ipAddress  String   @map("ip_address") @db.VarChar(45)
+  // time stamps
+  createdAt  DateTime @default(now()) @map("created_at")
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  @@index([userId, deviceId], name: "idx_user_device")
+}

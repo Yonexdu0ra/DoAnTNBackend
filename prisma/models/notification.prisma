@@ -1,0 +1,21 @@
+model Notification {
+  id String @id @default(uuid(7))
+
+  userId  String @map("user_id") // người nhận
+  title   String @db.VarChar(255)
+  content String @db.Text
+
+  type   NotificationType // loại thông báo
+  isRead Boolean          @default(false) @map("is_read")
+
+  // dùng để redirect (VD: bấm vào mở overtime_request id=123)
+  refType String? @map("ref_type") // "OVERTIME", "LEAVE", "JOB"
+  refId   String? @map("ref_id")
+
+  createdAt DateTime  @default(now()) @map("created_at")
+  readAt    DateTime? @map("read_at")
+
+  @@index([userId, isRead])
+  @@index([type])
+  @@map("notifications")
+}

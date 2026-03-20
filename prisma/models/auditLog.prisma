@@ -1,0 +1,17 @@
+model AuditLog {
+  id String @id @default(uuid(7))
+
+  userId     String? // ai thao tác (null nếu system)
+  action     String // hành động: CREATE_USER, DELETE_LEAVE, LOGIN_FAIL
+  resource   String // đối tượng: User, LeaveRequest, Holiday
+  resourceId String? // id bản ghi bị tác động
+
+  oldValue Json? // dữ liệu trước khi thay đổi
+  newValue Json? // dữ liệu sau khi thay đổi
+
+  ipAddress String? // IP người thao tác
+  userAgent String? // trình duyệt / app
+
+  status    String // SUCCESS / FAIL
+  createdAt DateTime @default(now())
+}
