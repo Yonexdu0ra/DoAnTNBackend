@@ -99,19 +99,19 @@ async function seedUsers() {
   const users = [
     {
       code: "ADM001",
-      email: "admin@acme.vn",
+      email: "qingusi1@gmail.com",
       phone: "0901000001",
       role: Role.ADMIN,
       biometricEnabled: true,
       profile: {
-        fullName: "Nguyen Quang Huy",
-        address: "12 Nguyen Hue, Quan 1, TP.HCM",
+        fullName: "Phạm Ngọc Quý",
+        address: "Quyết  Thắng Thái Nguyên",
         bio: "System administrator, quan ly he thong va van hanh bao mat.",
       },
     },
     {
       code: "MGR001",
-      email: "linh.tran@acme.vn",
+      email: "nguoidungemail1@gmail.com",
       phone: "0901000002",
       role: Role.MANAGER,
       biometricEnabled: true,
@@ -135,7 +135,7 @@ async function seedUsers() {
     },
     {
       code: "EMP001",
-      email: "an.le@acme.vn",
+      email: "dtc225180267@ictu.edu.vn",
       phone: "0901000101",
       role: Role.EMPLOYEE,
       biometricEnabled: true,
