@@ -4,8 +4,7 @@ type User {
   id:               ID    
   email:         String   
   phone:            String   
-  code:         String    
-  password:   String
+  code:         String  
   biometricEnabled: Boolean   
   role:    String      
   deletedAt:     Date
