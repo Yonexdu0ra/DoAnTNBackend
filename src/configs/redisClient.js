@@ -1,17 +1,15 @@
-import { createClient } from "redis";
+import Redis from 'ioredis';
 
-const redisConfig = {
+export const redisConfig = {
+    host: process.env.REDIS_HOST,
+    port: Number(process.env.REDIS_PORT),
     username: process.env.REDIS_USERNAME,
     password: process.env.REDIS_PASSWORD,
-    socket: {
-        host: process.env.REDIS_HOST,
-        port: Number(process.env.REDIS_PORT),
-    }
 };
 
-export const client = createClient(redisConfig);
-export const redisPub = client.duplicate();
-export const redisSub = client.duplicate();
+export const client = new Redis(redisConfig);
+export const redisPub = new Redis(redisConfig);
+export const redisSub = new Redis(redisConfig);
 
 
 client.on('error', err => console.log('Redis Client Error', err));
@@ -20,17 +18,15 @@ redisSub.on('error', err => console.log('Redis Sub Error', err));
 
 const connectRedis = async () => {
     try {
-
         await Promise.all([
-            client.connect(),
-            redisPub.connect(),
-            redisSub.connect()
+            client.ping(),
+            redisPub.ping(),
+            redisSub.ping(),
         ]);
         console.log('connect to redis success !');
     } catch (error) {
         console.log('connect to redis failed !', error.message);
     }
-
 }
 
 connectRedis();
