@@ -107,6 +107,7 @@ async function seedUsers() {
         fullName: "Phạm Ngọc Quý",
         address: "Quyết  Thắng Thái Nguyên",
         bio: "System administrator, quan ly he thong va van hanh bao mat.",
+        avatarUrl: "https://github.com/shadcn.png"
       },
     },
     {
@@ -119,6 +120,7 @@ async function seedUsers() {
         fullName: "Tran Hoang Linh",
         address: "45 Le Loi, Quan 3, TP.HCM",
         bio: "Quan ly phong Ky thuat.",
+        avatarUrl: "https://github.com/shadcn.png"
       },
     },
     {
@@ -131,6 +133,7 @@ async function seedUsers() {
         fullName: "Pham Duc Minh",
         address: "120 Pham Van Dong, Thu Duc, TP.HCM",
         bio: "Quan ly khoi Van hanh va cham cong.",
+        avatarUrl: "https://github.com/shadcn.png"
       },
     },
     {
@@ -143,6 +146,7 @@ async function seedUsers() {
         fullName: "Le Thu An",
         address: "22 Vo Thi Sau, Quan 1, TP.HCM",
         bio: "Backend developer.",
+        avatarUrl: "https://github.com/shadcn.png"
       },
     },
     {
@@ -155,6 +159,7 @@ async function seedUsers() {
         fullName: "Nguyen Minh Khanh",
         address: "8 Xo Viet Nghe Tinh, Binh Thanh, TP.HCM",
         bio: "Frontend developer, phu trach dashboard.",
+        avatarUrl: "https://github.com/shadcn.png"
       },
     },
     {
@@ -167,6 +172,7 @@ async function seedUsers() {
         fullName: "Vo Ngoc Hoa",
         address: "76 Dien Bien Phu, Quan 3, TP.HCM",
         bio: "QA engineer.",
+        avatarUrl: "https://github.com/shadcn.png"
       },
     },
     {
@@ -179,6 +185,7 @@ async function seedUsers() {
         fullName: "Bui Anh Tuan",
         address: "15 Phan Dang Luu, Phu Nhuan, TP.HCM",
         bio: "Mobile developer.",
+        avatarUrl: "https://github.com/shadcn.png"
       },
     },
     {
@@ -191,6 +198,7 @@ async function seedUsers() {
         fullName: "Do Thanh Mai",
         address: "101 Hoang Van Thu, Tan Binh, TP.HCM",
         bio: "Nhan su, theo doi phe duyet don.",
+        avatarUrl: "https://github.com/shadcn.png"
       },
     },
     {
@@ -203,6 +211,7 @@ async function seedUsers() {
         fullName: "Ly Quoc Vinh",
         address: "9 Quang Trung, Go Vap, TP.HCM",
         bio: "DevOps engineer.",
+        avatarUrl: "https://github.com/shadcn.png"
       },
     },
     {
@@ -215,6 +224,7 @@ async function seedUsers() {
         fullName: "Dang Thi Nhung",
         address: "55 Au Co, Tan Phu, TP.HCM",
         bio: "Data analyst.",
+        avatarUrl: "https://github.com/shadcn.png"
       },
     },
   ];
@@ -234,6 +244,7 @@ async function seedUsers() {
             fullName: user.profile.fullName,
             address: user.profile.address,
             bio: user.profile.bio,
+            avatarUrl: user.profile.avatarUrl || "https://github.com/shadcn.png"
           },
         },
       },

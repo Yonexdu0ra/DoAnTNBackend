@@ -23,6 +23,7 @@ const login = async (idenfier, password) => {
                 profile: {
                     select: {
                         fullName: true,
+                        avatarUrl: true,
                     }
                 }
             }
@@ -92,6 +93,7 @@ const refreshToken = async (refreshToken) => {
                 profile: {
                     select: {
                         fullName: true,
+                        avatarUrl: true,
                     }
                 }
             }
