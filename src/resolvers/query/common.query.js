@@ -2,6 +2,7 @@ import { withAuthorization, ROLE_ACCESS } from '../../utils/authroziredRole.js'
 import getSelectPrisma from '../../utils/getSelectPrisma.js'
 import holidayService from '../../services/holiday.service.js'
 import userService from '../../services/user.service.js'
+import { GraphQLScalarType } from 'graphql';
 
 const commonQueries = {
     holidays: withAuthorization('holidays', ROLE_ACCESS.common, async (_parent, args, _context, info) => {

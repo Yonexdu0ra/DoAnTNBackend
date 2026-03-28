@@ -49,7 +49,7 @@ enum HolidayType {
 
 type Attendance {
   id: ID!
-  date: String!
+  date: Date!
   type: AttendanceType
   isFraud: Boolean
   fraudReason: String
@@ -84,9 +84,9 @@ type Holiday {
   name: String!
   type: HolidayType
   description: String
-  startDate: String
+  startDate: Date
   isPaid: Boolean
-  endDate: String
+  endDate: Date
   createdAt: Date
   updatedAt: Date
 }
@@ -100,8 +100,8 @@ type Job {
   workEndTime: Date
   earlyCheckInMinutes: Int
   lateCheckInMinutes: Int
-  earlyLeaveMinutes: Int
-  lateLeaveMinutes: Int
+  earlyCheckOutMinutes: Int
+  lateCheckOutMinutes: Int
   latitude: Float
   longitude: Float
   radius: Float
@@ -414,8 +414,8 @@ input CreateJobInput {
   workEndTime: Date!
   earlyCheckInMinutes: Int
   lateCheckInMinutes: Int
-  earlyLeaveMinutes: Int
-  lateLeaveMinutes: Int
+  earlyCheckOutMinutes: Int
+  lateCheckOutMinutes: Int
   latitude: Float!
   longitude: Float!
   radius: Float!

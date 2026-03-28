@@ -27,7 +27,7 @@ const schema = makeExecutableSchema({ typeDefs, resolvers });
 // WebSocket server cho Subscriptions
 const wsServer = new WebSocketServer({
   server: httpServer,
-  path: '/subscriptions',
+  path: '/graphql',
 });
 
 const serverCleanup = useServer({
@@ -40,26 +40,21 @@ const serverCleanup = useServer({
       '';
 
     if (!token) return {};
-
-    const tokenDecoded = verifyAccessToken(token);
+    const tokenWithoutBearer = token.replace(/^Bearer\s/, '');
+    const tokenDecoded = verifyAccessToken(tokenWithoutBearer);
     return tokenDecoded ? { user: tokenDecoded } : {};
   },
 }, wsServer);
 
 const server = new ApolloServer({
   schema,
-  introspection: !isProduction,
+  introspection: true,
   plugins: [
     ApolloServerPluginDrainHttpServer({ httpServer }),
-    isProduction
-      ? ApolloServerPluginLandingPageProductionDefault({
-          graphRef: 'my-graph-id@my-graph-variant',
-          footer: false,
-        })
-      : ApolloServerPluginLandingPageLocalDefault({
-          footer: false,
-          embed: { endpointIsEditable: true },
-        }),
+    ApolloServerPluginLandingPageLocalDefault({
+      footer: false,
+      embed: { endpointIsEditable: true },
+    }),
     {
       async serverWillStart() {
         return {
@@ -79,7 +74,7 @@ await server.start();
 
 app.use(
   express.urlencoded({ extended: true }),
-  cors({ origin: "*" }),
+  cors({ origin: "http://192.168.1.73:3000", credentials: true }),
   express.json()
 );
 
@@ -93,14 +88,17 @@ app.use(
 
       const isIntrospection =
         req.body?.operationName === 'IntrospectionQuery';
-
+      if (isIntrospection) {
+        return {}; // 👈 luôn cho qua
+      }
       if (!token && isIntrospection) {
         return {};
       }
 
       if (!token) throw new Error('Unauthorized');
+      const tokenWithoutBearer = token.replace(/^Bearer\s/, '');
 
-      const tokenDecoded = verifyAccessToken(token);
+      const tokenDecoded = verifyAccessToken(tokenWithoutBearer);
       if (!tokenDecoded) throw new Error('Unauthorized');
 
       return { user: tokenDecoded };
@@ -112,5 +110,5 @@ await new Promise((resolve) =>
   httpServer.listen({ port: PORT }, resolve),
 );
 console.log(`Server ready at http://${process.env.HOST_LOCAL}:${PORT}/graphql`);
-console.log(`WebSocket subscriptions at ws://${process.env.HOST_LOCAL}:${PORT}/subscriptions`);
+console.log(`WebSocket subscriptions at ws://${process.env.HOST_LOCAL}:${PORT}/graphql`);
 console.log(`Production: http://${process.env.HOST_PROD}`);
