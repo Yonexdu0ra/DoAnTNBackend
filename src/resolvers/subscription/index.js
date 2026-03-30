@@ -4,6 +4,8 @@ import { pubsub, EVENTS } from '../../configs/pubsub.js'
 const commonSubscriptions = {
 	notificationReviced: {
 		subscribe: async (_parent, _args, context) => {
+			console.log(context);
+			
 			ensureAuthorized(context, ROLE_ACCESS.common, 'Subscription notificationReviced')
 			const userId = context.user?.id
 			// Filter notification chỉ cho user hiện tại

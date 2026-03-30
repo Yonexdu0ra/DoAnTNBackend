@@ -1,14 +1,10 @@
 import { Router } from 'express'
 import { login, refreshToken, logout } from '../../controllers/auth.controller.js'
-import { verifyAccessToken } from '../../utils/token.js';
+import { getToken, verifyAccessToken } from '../../utils/token.js';
 const router = Router();
 const requireAuth = (req, res, next) => {
   try {
-
-    if(!req.headers.authorization) throw new Error("Bạn không có quyền truy cập tài nguyên này!")
-    const token = req.headers.authorization.split(' ')[1];
-
-
+    const token = getToken({ headers: req.headers, cookies: req.cookies });
     if (!token) throw new Error("Bạn không có quyền truy cập tài nguyên này!")
     
     const tokenDecoded = verifyAccessToken(token);

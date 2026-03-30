@@ -11,7 +11,7 @@ import { useServer } from 'graphql-ws/use/ws';
 import routes from './routes/index.js'
 import { typeDefs } from './schemas/index.js'
 import { resolvers } from './resolvers/index.js'
-import { verifyAccessToken } from './utils/token.js';
+import { getToken, verifyAccessToken } from './utils/token.js';
 
 const PORT = process.env.PORT || 3002;
 
@@ -27,21 +27,22 @@ const schema = makeExecutableSchema({ typeDefs, resolvers });
 // WebSocket server cho Subscriptions
 const wsServer = new WebSocketServer({
   server: httpServer,
-  path: '/graphql',
+  path: '/api/v1/graphql',
 });
 
 const serverCleanup = useServer({
   schema,
   context: async (ctx) => {
-    const token =
-      ctx.connectionParams?.Authorization ||
-      ctx.connectionParams?.authorization ||
-      ctx.connectionParams?.token ||
-      '';
+    const token = getToken({
+      headers: ctx.extra?.request?.headers,
+      cookies: ctx.extra.request.headers.cookie,
+      cookieName: 'access_token',
+    });
 
+    
     if (!token) return {};
-    const tokenWithoutBearer = token.replace(/^Bearer\s/, '');
-    const tokenDecoded = verifyAccessToken(tokenWithoutBearer);
+    const tokenDecoded = verifyAccessToken(token);
+
     return tokenDecoded ? { user: tokenDecoded } : {};
   },
 }, wsServer);
@@ -74,33 +75,33 @@ await server.start();
 
 app.use(
   express.urlencoded({ extended: true }),
-  cors({ origin: "http://192.168.1.73:3000", credentials: true }),
+  cors({
+    origin: [
+      'https://qujs.online',
+    ], credentials: true
+  }),
   express.json()
 );
 
 routes(app);
 
 app.use(
-  '/graphql',
+  '/api/v1/graphql',
   expressMiddleware(server, {
     context: async ({ req }) => {
-      const token = req.headers.authorization || '';
+      const token = getToken({ headers: req.headers, cookies: req.cookies });
 
       const isIntrospection =
         req.body?.operationName === 'IntrospectionQuery';
       if (isIntrospection) {
         return {}; // 👈 luôn cho qua
       }
-      if (!token && isIntrospection) {
-        return {};
-      }
+
 
       if (!token) throw new Error('Unauthorized');
-      const tokenWithoutBearer = token.replace(/^Bearer\s/, '');
+      const tokenDecoded = verifyAccessToken(token);
 
-      const tokenDecoded = verifyAccessToken(tokenWithoutBearer);
       if (!tokenDecoded) throw new Error('Unauthorized');
-
       return { user: tokenDecoded };
     },
   }),

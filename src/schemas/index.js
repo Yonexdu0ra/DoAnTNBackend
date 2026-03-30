@@ -131,7 +131,7 @@ type LeaveRequest {
   reason: String
   status: StatusType
   reply: String
-  approverBy: ID
+  approvedBy: ID
   approver: User
   approverAt: Date
   createdAt: Date
@@ -164,7 +164,7 @@ type OvertimeRequest {
   reason: String
   status: StatusType
   reply: String
-  approverBy: ID
+  approvedBy: ID
   approver: User
   approverAt: Date
   createdAt: Date
