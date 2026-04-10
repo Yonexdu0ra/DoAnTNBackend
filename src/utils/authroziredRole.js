@@ -1,14 +1,20 @@
+import {
+	AUTH_ERROR_REASON,
+	createForbiddenGraphQLError,
+	createUnauthenticatedGraphQLError,
+} from './graphqlAuthError.js'
+
 export const ROLE = {
 	ADMIN: 'ADMIN',
 	MANAGER: 'MANAGER',
-	USER: 'USER',
+	EMPLOYEE: 'EMPLOYEE',
 }
 
 export const ROLE_ACCESS = {
-	common: [ROLE.ADMIN, ROLE.MANAGER, ROLE.USER],
+	common: [ROLE.ADMIN, ROLE.MANAGER, ROLE.EMPLOYEE],
 	admin: [ROLE.ADMIN],
 	manager: [ROLE.MANAGER],
-	employee: [ROLE.USER],
+	employee: [ROLE.EMPLOYEE],
 	managerAdmin: [ROLE.MANAGER, ROLE.ADMIN],
 }
 
@@ -36,12 +42,18 @@ export const ensureAuthorized = (context, allowedRoles = [], operationName = 'op
 
 	const role = getRoleFromContext(context)
 	if (!role) {
-		throw new Error(`Unauthorized: ${operationName}`)
+		throw createUnauthenticatedGraphQLError(
+			AUTH_ERROR_REASON.TOKEN_MISSING,
+			'Unauthorized',
+			{ operation: operationName },
+		)
 	}
 
 	const normalizedAllowed = allowedRoles.map((item) => normalizeRole(item))
 	if (!normalizedAllowed.includes(role)) {
-		throw new Error(`Forbidden: ${operationName}`)
+		throw createForbiddenGraphQLError('Forbidden', {
+			operation: operationName,
+		})
 	}
 }
 // một hàm wrapper để bảo vệ resolver bằng cách kiểm tra authorization trước khi gọi handler thực sự

@@ -16,8 +16,13 @@ export const resolvers = {
         },
     }),
     JSON: GraphQLJSON,
+
+    // Type resolvers cho field mapping
+    User: {
+        deleteAt: (parent) => parent.deletedAt || null,
+    },
+
     Query: queryResolvers,
     Mutation: mutationResolvers,
     Subscription: subscriptionResolvers,
 }
-

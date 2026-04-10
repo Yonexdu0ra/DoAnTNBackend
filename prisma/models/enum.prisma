@@ -5,6 +5,11 @@ enum Role {
     ADMIN // quản lý tài khoản, quyền hạ, cấu hình hệ thống, xuất báo cáo
 }
 
+enum GenderType {
+    MALE
+    FEMALE
+}
+
 // StatusType để quản lý trạng thái tham gia công việc của người dùng (trạng thái đang chờ duyệt, đã được duyệt, bị từ chối hoặc đã hủy)
 enum StatusType {
     PENDING
@@ -14,27 +19,85 @@ enum StatusType {
 }
 
 enum LeaveType {
+    //  Nghỉ phép năm (phép tích lũy)
+    ANNUAL
+
+    //  Nghỉ ốm (có giấy xác nhận y tế)
     SICK
-    VACATION
-    PERSONAL
+
+    //  Nghỉ thai sản
+    MATERNITY
+
+    //  Nghỉ việc riêng có lương (cưới, tang,...)
+    PERSONAL_PAID
+
+    //  Nghỉ việc riêng không lương
+    PERSONAL_UNPAID
+
+    //  Nghỉ không lương (xin riêng)
+    UNPAID
+
+    //  Nghỉ lễ, Tết (theo nhà nước)
+    PUBLIC_HOLIDAY
+
+    //  Nghỉ bù (do làm thêm)
+    COMPENSATORY
+
+    //  Đi công tác (business trip)
+    BUSINESS_TRIP
+
+    //  Làm việc từ xa (WFH nhưng tính như leave trong 1 số hệ thống)
+    WORK_FROM_HOME
+
+    //  Khác (fallback)
     OTHER
 }
 
 enum AttendanceType {
-    // chấm công bình thường, có check-in và check-out
+    // Đi làm đầy đủ, đúng giờ
     PRESENT
-    // vắng mặt không lý do, không check-in và check-out
+
+    // Vắng mặt không lý do
     ABSENT
-    // đi muộn, có check-in nhưng sau giờ làm việc quy định
+
+    // Đi muộn
     LATE
-    // về sớm, có check-out nhưng trước giờ kết thúc công việc quy định
+
+    // Về sớm
     EARLY_LEAVE
-    // đi muộn và về sớm trong cùng một ngày, có check-in sau giờ làm việc quy định và check-out trước giờ kết thúc công việc quy định
+
+    // Vừa đi muộn vừa về sớm
     LATE_AND_EARLY
-    // quên chấm công check-in
+
+    // Thiếu check-in (không chấm công đầu giờ)
     MISSING_CHECKIN
-    // quên chấm công check-out
+
+    // Thiếu check-out (không chấm công cuối giờ)
     MISSING_CHECKOUT
+
+    // Nghỉ có phép (đã được duyệt)
+    ON_LEAVE
+
+    // Nghỉ lễ / ngày nghỉ công ty
+    HOLIDAY
+
+    // Làm thêm giờ (ngoài giờ hành chính)
+    OVERTIME
+
+    // Làm việc từ xa (WFH)
+    WORK_FROM_HOME
+
+    // Đi công tác
+    BUSINESS_TRIP
+
+    // Check-in nhưng không đủ giờ làm (ví dụ < 50% ngày công)
+    HALF_DAY
+
+    // Có mặt nhưng đang trong trạng thái nghỉ ốm / thai sản (mapping với leave)
+    ON_LEAVE_PAID
+
+    // Ca làm bị lỗi dữ liệu / chưa xác định (fallback)
+    UNKNOWN
 }
 
 enum NotificationType {
@@ -47,14 +110,35 @@ enum NotificationType {
 
 // HolidayType để phân loại ngày nghỉ lễ
 enum HolidayType {
-    // nghỉ lễ quốc gia - có lương
-    NATIONAL
-    // nghỉ lễ tôn giáo - có lương
-    RELIGIOUS
-    // nghỉ lễ văn hóa - có lương
-    CULTURAL
-    // nghỉ lễ công ty - có lương
-    COMPANY
-    // nghỉ lễ không có lương
-    OTHER
+    //   Nghỉ phép năm (Annual Leave)
+    //   Có lương (công ty trả)
+    ANNUAL_LEAVE
+
+    //   Nghỉ lễ, Tết (Public Holiday)
+    //   Có lương 100% (công ty trả)
+    PUBLIC_HOLIDAY
+
+    //   Nghỉ ốm (Sick Leave)
+    //   Có lương (BHXH chi trả, không phải công ty)
+    SICK_LEAVE
+
+    //   Nghỉ thai sản (Maternity Leave)
+    //   Có lương (BHXH chi trả)
+    MATERNITY_LEAVE
+
+    //   Nghỉ việc riêng có lương (Paid Personal Leave)
+    //   Có lương (theo luật)
+    PAID_PERSONAL_LEAVE
+
+    //   Nghỉ không lương (Unpaid Leave)
+    //   Không có lương
+    UNPAID_LEAVE
+
+    //   Nghỉ bù (Compensatory Leave)
+    //   Có lương (hoặc đã được trả OT)
+    COMPENSATORY_LEAVE
+
+    //   Nghỉ theo chính sách công ty (Company Leave)
+    //   Thường có lương (tuỳ công ty)
+    COMPANY_LEAVE
 }

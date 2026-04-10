@@ -11,7 +11,13 @@ import { useServer } from 'graphql-ws/use/ws';
 import routes from './routes/index.js'
 import { typeDefs } from './schemas/index.js'
 import { resolvers } from './resolvers/index.js'
-import { getToken, verifyAccessToken } from './utils/token.js';
+import { getToken, verifyAccessTokenDetailed } from './utils/token.js';
+import { CloseCode } from 'graphql-ws';
+import {
+  AUTH_ERROR_REASON,
+  buildWsUnauthenticatedReason,
+  createUnauthenticatedGraphQLError,
+} from './utils/graphqlAuthError.js';
 
 const PORT = process.env.PORT || 3002;
 
@@ -32,18 +38,55 @@ const wsServer = new WebSocketServer({
 
 const serverCleanup = useServer({
   schema,
-  context: async (ctx) => {
+  keepAlive: 10000, // 10 giây
+  onConnect: async (ctx) => {
     const token = getToken({
       headers: ctx.extra?.request?.headers,
-      cookies: ctx.extra.request.headers.cookie,
+      cookies: ctx.extra?.request?.headers?.cookie,
+      connectionParams: ctx.connectionParams,
       cookieName: 'access_token',
     });
 
-    
-    if (!token) return {};
-    const tokenDecoded = verifyAccessToken(token);
+    if (!token) {
+      ctx.extra.socket.close(
+        CloseCode.Unauthorized,
+        AUTH_ERROR_REASON.TOKEN_MISSING
+      );
+      return false;
+    }
+    const { decoded, reason } = verifyAccessTokenDetailed(token);
 
-    return tokenDecoded ? { user: tokenDecoded } : {};
+    if (!decoded) {
+      ctx.extra.socket.close(
+        CloseCode.Unauthorized,
+        reason
+      );
+      return false;
+    }
+  },
+
+  context: async (ctx) => {
+    const token = getToken({
+      headers: ctx.extra?.request?.headers,
+      cookies: ctx.extra?.request?.headers?.cookie,
+      connectionParams: ctx.connectionParams,
+      cookieName: 'access_token',
+    });
+    if (!token) {
+      throw createUnauthenticatedGraphQLError(
+        AUTH_ERROR_REASON.TOKEN_MISSING,
+        'Unauthorized',
+      );
+    }
+    const { decoded, reason } = verifyAccessTokenDetailed(token);
+
+    if (!decoded) {
+      throw createUnauthenticatedGraphQLError(
+        reason || AUTH_ERROR_REASON.TOKEN_INVALID,
+      );
+    }
+
+    return { user: decoded };
   },
 }, wsServer);
 
@@ -89,7 +132,11 @@ app.use(
   '/api/v1/graphql',
   expressMiddleware(server, {
     context: async ({ req }) => {
-      const token = getToken({ headers: req.headers, cookies: req.cookies });
+      const token = getToken({
+        headers: req.headers,
+        cookies: req.cookies,
+        cookieName: 'access_token',
+      });
 
       const isIntrospection =
         req.body?.operationName === 'IntrospectionQuery';
@@ -97,12 +144,15 @@ app.use(
         return {}; // 👈 luôn cho qua
       }
 
+      const { decoded, reason } = verifyAccessTokenDetailed(token);
 
-      if (!token) throw new Error('Unauthorized');
-      const tokenDecoded = verifyAccessToken(token);
+      if (!decoded) {
+        throw createUnauthenticatedGraphQLError(
+          reason || AUTH_ERROR_REASON.TOKEN_INVALID,
+        );
+      }
 
-      if (!tokenDecoded) throw new Error('Unauthorized');
-      return { user: tokenDecoded };
+      return { user: decoded };
     },
   }),
 );

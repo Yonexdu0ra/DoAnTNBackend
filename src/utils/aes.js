@@ -1,7 +1,9 @@
 import crypto from "crypto";
-
+const key = crypto.createHash('sha256')
+  .update(process.env.AES_SECRET_KEY || "TEST_KEY")
+  .digest()
 const ALGORITHM = "aes-256-gcm";
-const SECRET_KEY = Buffer.from(process.env.AES_SECRET_KEY, "hex"); // 32 bytes
+const SECRET_KEY = Buffer.from(key, "hex"); // 32 bytes
 
 export const encryptAES = (text) => {
   const iv = crypto.randomBytes(12); // GCM dùng 12 bytes

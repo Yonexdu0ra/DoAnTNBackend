@@ -1,32 +1,33 @@
 import prisma from '../configs/prismaClient.js'
 
-/**
- * Cập nhật hoặc tạo profile
- */
+// ── Mutation: cập nhật thông tin profile ──
 const updateProfile = async (userId, input) => {
-    const existingProfile = await prisma.profile.findUnique({ where: { userId } })
+    // Tìm profile hiện tại
+    const existing = await prisma.profile.findUnique({
+        where: { userId },
+    })
+    if (!existing) throw new Error('Profile không tồn tại')
 
-    if (existingProfile) {
-        return prisma.profile.update({
-            where: { userId },
-            data: {
-                ...(input.fullName !== undefined && { fullName: input.fullName }),
-                ...(input.address !== undefined && { address: input.address }),
-                ...(input.avatarUrl !== undefined && { avatarUrl: input.avatarUrl }),
-                ...(input.bio !== undefined && { bio: input.bio }),
-            },
-        })
-    }
-
-    return prisma.profile.create({
+    const updated = await prisma.profile.update({
+        where: { userId },
         data: {
-            userId,
-            fullName: input.fullName || '',
-            address: input.address || '',
-            avatarUrl: input.avatarUrl,
-            bio: input.bio,
+            ...(input.fullName !== undefined && { fullName: input.fullName }),
+            ...(input.gender !== undefined && { gender: input.gender }),
+            ...(input.address !== undefined && { address: input.address }),
+            ...(input.birthday !== undefined && { birthday: input.birthday }),
+            ...(input.avatarUrl !== undefined && { avatarUrl: input.avatarUrl }),
+            ...(input.bio !== undefined && { bio: input.bio }),
         },
     })
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Cập nhật thông tin cá nhân thành công',
+        data: updated,
+    }
 }
 
-export default { updateProfile }
+export default {
+    updateProfile,
+}

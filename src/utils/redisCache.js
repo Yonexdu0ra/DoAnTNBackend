@@ -11,6 +11,9 @@ export const CACHE_TTL = {
 export const CACHE_KEYS = {
     STATISTICS_ADMIN: 'stats:admin',
     STATISTICS_MANAGER: (userId) => `stats:manager:${userId}`,
+    STATISTICS_DASHBOARD_ADMIN: (filterHash) => `stats:dashboard:admin:${filterHash}`,
+    STATISTICS_DASHBOARD_MANAGER: (userId, filterHash) => `stats:dashboard:manager:${userId}:${filterHash}`,
+    STATISTICS_DASHBOARD_EMPLOYEE: (userId, filterHash) => `stats:dashboard:employee:${userId}:${filterHash}`,
     HOLIDAYS: (startDate, endDate) => `holidays:${startDate}:${endDate}`,
     USERS_LIST: (page, limit, orderField, orderDir, searchField, searchValue) =>
         `users:p${page}:l${limit}:o${orderField}:${orderDir}:s${searchField || ''}:${searchValue || ''}`,

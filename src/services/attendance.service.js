@@ -1,233 +1,221 @@
 import prisma from '../configs/prismaClient.js'
-import { invalidateCache } from '../utils/redisCache.js'
-import { buildPagePaginationArgs, buildCursorPaginationArgs, processCursorResult } from '../utils/pagination.js'
-import { verifyManagerOfJob } from './job.service.js'
+import {
+    buildPagePaginationArgs,
+    buildCursorPaginationArgs,
+    processCursorResult,
+    buildPrismaFilter,
+} from '../utils/pagination.js'
 import { pubsub, EVENTS } from '../configs/pubsub.js'
-import { decryptAES } from '../utils/aes.js'
 
-/**
- * Tính khoảng cách GPS (Haversine formula) - trả về mét
- */
-const calculateDistance = (lat1, lon1, lat2, lon2) => {
-    const R = 6371000
-    const toRad = (deg) => deg * (Math.PI / 180)
-    const dLat = toRad(lat2 - lat1)
-    const dLon = toRad(lon2 - lon1)
-    const a = Math.sin(dLat / 2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+const KEYWORD_FIELDS = ['fraudReason']
+const IN_FIELD_MAP = { typeIn: 'type' }
+const INCLUDE_RELATIONS = {
+    user: { include: { profile: true, department: true, position: true } },
+    job: true,
 }
 
-/**
- * Danh sách attendance theo job (manager)
- */
-const getAttendancesByJob = async (managerId, jobId, pagination, orderBy, search, select = {}) => {
-    await verifyManagerOfJob(managerId, jobId)
-
-    const paginationArgs = buildPagePaginationArgs(pagination, orderBy, search, { jobId })
-
-    return prisma.attendance.findMany({
-        ...paginationArgs,
-        ...select,
-    })
-}
-
-/**
- * Danh sách attendance theo khoảng thời gian (employee)
- */
-const getAttendancesByEmployeeByTime = async (userId, startDate, endDate, select = {}) => {
-    const where = { userId }
-    if (startDate) where.date = { ...where.date, gte: new Date(startDate) }
-    if (endDate) where.date = { ...where.date, lte: new Date(endDate) }
-
-    return prisma.attendance.findMany({
-        where,
-        orderBy: { date: 'desc' },
-        ...select,
-    })
-}
-
-/**
- * Danh sách attendance của employee (cursor)
- */
-const getAttendancesByEmployees = async (userId, pagination, orderBy, search, select = {}) => {
-    const limit = pagination?.limit || 10
-    const paginationArgs = buildCursorPaginationArgs(pagination, orderBy, search, { userId })
-
-    const attendances = await prisma.attendance.findMany({
-        ...paginationArgs,
-        ...select.select?.data ? { select: select.select.data.select } : {},
+// ── Query: chấm công theo thời gian (employee) ──
+const getAttendancesByEmployeeByTime = async (
+    userId,
+    startDate,
+    endDate,
+    filter,
+    select,
+) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
     })
 
-    return processCursorResult(attendances, limit)
-}
-
-/**
- * Chấm công (check-in/check-out) cho employee
- */
-const createAttendance = async (userId, input) => {
-    const { jobId, deviceId, platform, deviceName, ipAddress, code, latitude, longitude, type } = input
-
-    const userInJob = await prisma.userJoinedJob.findFirst({
-        where: { jobId, userId, status: 'APPROVED' },
-    })
-    if (!userInJob) throw new Error('Bạn không thuộc công việc này')
-
-    const job = await prisma.job.findUnique({ where: { id: jobId } })
-    if (!job) throw new Error('Công việc không tồn tại')
-
-    const decryptedCode = decryptAES(code)
-    if (!decryptedCode) throw new Error('Mã QR không hợp lệ')
-
-    const distance = calculateDistance(latitude, longitude, job.latitude, job.longitude)
-    const isFraud = distance > job.radius
-    const fraudReason = isFraud ? `Khoảng cách ${Math.round(distance)}m vượt quá bán kính ${job.radius}m` : null
-
-    const now = new Date()
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
-
-    const meta = {
-        deviceId, platform, deviceName, ipAddress,
-        latitude, longitude,
-        distance: Math.round(distance),
-        qrCode: decryptedCode,
-        timestamp: now.toISOString(),
-    }
-
-    // Xử lý thiết bị
-    const existingDevice = await prisma.userDevice.findFirst({ where: { userId, deviceId } })
-    if (existingDevice) {
-        await prisma.userDevice.update({
-            where: { id: existingDevice.id },
-            data: { platform, deviceName: deviceName || 'Unknown Device', ipAddress },
-        })
-    } else {
-        await prisma.userDevice.create({
-            data: { userId, deviceId, platform, deviceName: deviceName || 'Unknown Device', ipAddress },
-        })
-    }
-
-    if (type === 'checkin') {
-        const existingAttendance = await prisma.attendance.findFirst({
-            where: { userId, jobId, date: today },
-        })
-        if (existingAttendance) throw new Error('Bạn đã chấm công vào hôm nay')
-
-        const workStart = new Date(job.workStartTime)
-        const checkInMinutes = now.getHours() * 60 + now.getMinutes()
-        const workStartMinutes = workStart.getHours() * 60 + workStart.getMinutes()
-        const lateMinutes = checkInMinutes - workStartMinutes
-
-        let attendanceType = 'PRESENT'
-        if (lateMinutes > (job.lateCheckInMinutes || 15)) attendanceType = 'LATE'
-
-        const attendance = await prisma.attendance.create({
-            data: {
-                userId, jobId, date: today,
-                type: attendanceType, checkInAt: now,
-                checkInMeta: meta, isFraud, fraudReason,
-                status: 'PENDING',
+    const data = await prisma.attendance.findMany({
+        where: {
+            userId,
+            date: {
+                gte: new Date(startDate),
+                lte: new Date(endDate),
             },
-            include: { user: true, job: true },
-        })
-
-        await invalidateCache('stats:*')
-        await pubsub.publish(EVENTS.NEW_ATTENDANCE_BY_JOB(jobId), attendance)
-
-        return { attendance, isFraud, fraudReason }
-    } else if (type === 'checkout') {
-        const attendance = await prisma.attendance.findFirst({
-            where: { userId, jobId, date: today },
-        })
-        if (!attendance) throw new Error('Bạn chưa chấm công vào hôm nay')
-        if (attendance.checkOutAt) throw new Error('Bạn đã chấm công ra hôm nay')
-
-        const workEnd = new Date(job.workEndTime)
-        const checkOutMinutes = now.getHours() * 60 + now.getMinutes()
-        const workEndMinutes = workEnd.getHours() * 60 + workEnd.getMinutes()
-        const earlyMinutes = workEndMinutes - checkOutMinutes
-
-        let updatedType = attendance.type
-        if (earlyMinutes > (job.earlyCheckOutMinutes || 15)) {
-            updatedType = attendance.type === 'LATE' ? 'LATE_AND_EARLY' : 'EARLY_LEAVE'
-        }
-
-        const updated = await prisma.attendance.update({
-            where: { id: attendance.id },
-            data: {
-                checkOutAt: now, checkOutMeta: meta,
-                type: updatedType,
-                ...(isFraud && { isFraud: true, fraudReason }),
-            },
-            include: { user: true, job: true },
-        })
-
-        await invalidateCache('stats:*')
-        await pubsub.publish(EVENTS.ATTENDANCE_UPDATED(userId, jobId), updated)
-
-        return { attendance: updated, isFraud, fraudReason }
-    } else {
-        throw new Error('Loại chấm công không hợp lệ. Chỉ chấp nhận: checkin, checkout')
-    }
-}
-
-/**
- * Tạo attendance thủ công (manager)
- */
-const createManualAttendance = async (managerId, input) => {
-    const { jobId, userId, date, type } = input
-    await verifyManagerOfJob(managerId, jobId)
-
-    const userInJob = await prisma.userJoinedJob.findFirst({
-        where: { jobId, userId, status: 'APPROVED' },
-    })
-    if (!userInJob) throw new Error('Nhân viên không thuộc công việc này')
-
-    const attendance = await prisma.attendance.create({
-        data: {
-            userId, jobId,
-            date: new Date(date), type,
-            status: 'APPROVED',
-            checkInMeta: { manual: true, createdBy: managerId },
+            ...filterWhere,
         },
-        include: { user: true, job: true },
+        ...(select ? { select } : {}),
+        orderBy: { date: 'desc' },
     })
 
-    await invalidateCache('stats:*')
-    return attendance
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Lấy danh sách chấm công thành công',
+        data,
+        pagination: {
+            page: 1,
+            limit: data.length,
+            total: data.length,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPrevPage: false,
+        },
+    }
 }
 
-/**
- * Review fraud attendance (manager)
- */
-const reviewFraudAttendance = async (managerId, input) => {
-    const { id, isFraud, fraudReason } = input
+// ── Query: chấm công employee (cursor-based) ──
+const getAttendancesByEmployee = async (
+    userId,
+    pagination,
+    orderBy,
+    filter,
+    select,
+) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
+    })
 
+    const limit = pagination?.limit || 10
+    const args = buildCursorPaginationArgs(pagination, orderBy, null, {
+        userId,
+        ...filterWhere,
+    })
+
+    const items = await prisma.attendance.findMany({
+        ...args,
+        ...(select ? { select } : {}),
+    })
+    const { data, nextCursor } = processCursorResult(items, limit)
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Lấy danh sách chấm công thành công',
+        data,
+        pagination: {
+            limit,
+            nextCursor,
+            hasNextPage: !!nextCursor,
+        },
+    }
+}
+
+// ── Query: chấm công theo job (manager, page-based) ──
+const getAttendancesByJob = async (
+    jobId,
+    pagination,
+    orderBy,
+    filter,
+    select,
+) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
+    })
+
+    const args = buildPagePaginationArgs(pagination, orderBy, null, {
+        jobId,
+        ...filterWhere,
+    })
+
+    const [data, total] = await Promise.all([
+        prisma.attendance.findMany({
+            ...args,
+            ...(select ? { select } : {}),
+        }),
+        prisma.attendance.count({ where: args.where }),
+    ])
+
+    const page = pagination?.page || 1
+    const limit = pagination?.limit || 10
+    const totalPages = Math.ceil(total / limit)
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Lấy danh sách chấm công theo công việc thành công',
+        data,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNextPage: page < totalPages,
+            hasPrevPage: page > 1,
+        },
+    }
+}
+
+// ── Mutation: review gian lận chấm công (manager) ──
+const reviewAttendanceFraud = async (input, approverUserId) => {
     const attendance = await prisma.attendance.findUnique({
-        where: { id },
-        include: { job: true },
+        where: { id: input.attendanceId },
+        include: INCLUDE_RELATIONS,
     })
     if (!attendance) throw new Error('Bản ghi chấm công không tồn tại')
 
-    await verifyManagerOfJob(managerId, attendance.jobId)
-
     const updated = await prisma.attendance.update({
-        where: { id },
+        where: { id: input.attendanceId },
         data: {
-            isFraud,
-            fraudReason: isFraud ? fraudReason : null,
+            isFraud: input.isFraud,
+            fraudReason: input.fraudReason || null,
         },
-        include: { user: true, job: true },
+        include: INCLUDE_RELATIONS,
     })
 
-    await invalidateCache('stats:*')
-    return updated
+    // Publish cho employee
+    pubsub.publish(EVENTS.EMPLOYEE_ATTENDANCE_STATUS(attendance.userId), {
+        employeeReceivedAttendanceStatus: {
+            status: 'success',
+            code: 200,
+            message: input.isFraud
+                ? 'Chấm công của bạn đã bị đánh dấu gian lận'
+                : 'Chấm công của bạn đã được xác nhận hợp lệ',
+            data: updated,
+        },
+    })
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Review chấm công thành công',
+        data: updated,
+    }
+}
+
+// ── Mutation: đánh dấu gian lận chấm công theo job (manager) ──
+const markAttendanceAsFraudByJob = async (input, approverUserId) => {
+    const attendance = await prisma.attendance.findFirst({
+        where: { id: input.attendanceId, jobId: input.jobId },
+        include: INCLUDE_RELATIONS,
+    })
+    if (!attendance) throw new Error('Bản ghi chấm công không tồn tại trong công việc này')
+
+    const updated = await prisma.attendance.update({
+        where: { id: input.attendanceId },
+        data: {
+            isFraud: true,
+            fraudReason: input.fraudReason,
+        },
+        include: INCLUDE_RELATIONS,
+    })
+
+    // Publish cho employee
+    pubsub.publish(EVENTS.EMPLOYEE_ATTENDANCE_STATUS(attendance.userId), {
+        employeeReceivedAttendanceStatus: {
+            status: 'success',
+            code: 200,
+            message: 'Chấm công của bạn đã bị đánh dấu gian lận',
+            data: updated,
+        },
+    })
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Đánh dấu gian lận thành công',
+        data: updated,
+    }
 }
 
 export default {
-    getAttendancesByJob,
     getAttendancesByEmployeeByTime,
-    getAttendancesByEmployees,
-    createAttendance,
-    createManualAttendance,
-    reviewFraudAttendance,
+    getAttendancesByEmployee,
+    getAttendancesByJob,
+    reviewAttendanceFraud,
+    markAttendanceAsFraudByJob,
 }

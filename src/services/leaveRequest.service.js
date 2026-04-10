@@ -1,169 +1,306 @@
 import prisma from '../configs/prismaClient.js'
-import { invalidateCache } from '../utils/redisCache.js'
-import { buildPagePaginationArgs, buildCursorPaginationArgs, processCursorResult } from '../utils/pagination.js'
-import { verifyManagerOfJob } from './job.service.js'
+import {
+    buildPagePaginationArgs,
+    buildCursorPaginationArgs,
+    processCursorResult,
+    buildPrismaFilter,
+} from '../utils/pagination.js'
 import { pubsub, EVENTS } from '../configs/pubsub.js'
-import notificationService from './notification.service.js'
+import { createAndPublishNotification } from './notification.service.js'
 
-/**
- * Danh sách đơn xin nghỉ theo job (manager)
- */
-const getLeaveRequestsByJob = async (managerId, jobId, pagination, orderBy, search, select = {}) => {
-    await verifyManagerOfJob(managerId, jobId)
+const KEYWORD_FIELDS = ['reason', 'reply']
+const IN_FIELD_MAP = { leaveTypeIn: 'leaveType', statusIn: 'status' }
+const INCLUDE_RELATIONS = {
+    user: { include: { profile: true, department: true, position: true } },
+    job: true,
+    approver: { include: { profile: true, department: true, position: true } },
+}
 
-    const paginationArgs = buildPagePaginationArgs(pagination, orderBy, search, { jobId })
+// ── Query: yêu cầu nghỉ phép của employee (cursor-based) ──
+const getLeaveRequestsByEmployee = async (
+    userId,
+    pagination,
+    orderBy,
+    filter,
+    select,
+) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
+    })
+
+    const limit = pagination?.limit || 10
+    const args = buildCursorPaginationArgs(pagination, orderBy, null, {
+        userId,
+        ...filterWhere,
+    })
+
+    const items = await prisma.leaveRequest.findMany({
+        ...args,
+        ...(select ? { select } : {}),
+    })
+    const { data, nextCursor } = processCursorResult(items, limit)
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Lấy danh sách yêu cầu nghỉ phép thành công',
+        data,
+        pagination: {
+            limit,
+            nextCursor,
+            hasNextPage: !!nextCursor,
+        },
+    }
+}
+
+// ── Query: yêu cầu nghỉ phép theo job (manager, page-based) ──
+const getLeaveRequestsByJob = async (
+    jobId,
+    pagination,
+    orderBy,
+    filter,
+    select,
+) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
+    })
+
+    const args = buildPagePaginationArgs(pagination, orderBy, null, {
+        jobId,
+        ...filterWhere,
+    })
 
     const [data, total] = await Promise.all([
         prisma.leaveRequest.findMany({
-            ...paginationArgs,
-            ...select.select?.data ? { select: select.select.data.select } : {},
+            ...args,
+            ...(select ? { select } : {}),
         }),
-        prisma.leaveRequest.count({ where: paginationArgs.where }),
+        prisma.leaveRequest.count({ where: args.where }),
     ])
 
-    return { data, total }
-}
-
-/**
- * Danh sách đơn xin nghỉ của employee (cursor)
- */
-const getLeaveRequestsByEmployee = async (userId, pagination, orderBy, search, select = {}) => {
+    const page = pagination?.page || 1
     const limit = pagination?.limit || 10
-    const paginationArgs = buildCursorPaginationArgs(pagination, orderBy, search, { userId })
+    const totalPages = Math.ceil(total / limit)
 
-    const leaveRequests = await prisma.leaveRequest.findMany({
-        ...paginationArgs,
-        ...select.select?.data ? { select: select.select.data.select } : {},
-    })
-
-    return processCursorResult(leaveRequests, limit)
-}
-
-/**
- * Phê duyệt / từ chối đơn xin nghỉ (manager)
- */
-const reviewLeaveRequest = async (id, status, reply, managerId) => {
-    const leaveRequest = await prisma.leaveRequest.findUnique({
-        where: { id },
-        include: { job: true, user: true },
-    })
-    if (!leaveRequest) throw new Error('Đơn xin nghỉ không tồn tại')
-
-    await verifyManagerOfJob(managerId, leaveRequest.jobId)
-
-    if (leaveRequest.status !== 'PENDING') {
-        throw new Error('Đơn xin nghỉ đã được xử lý')
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Lấy danh sách yêu cầu nghỉ phép theo công việc thành công',
+        data,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNextPage: page < totalPages,
+            hasPrevPage: page > 1,
+        },
     }
-
-    const updated = await prisma.leaveRequest.update({
-        where: { id },
-        data: {
-            status,
-            reply,
-            approvedBy: managerId,
-            approverAt: new Date(),
-        },
-        include: { user: true, job: true, approver: true },
-    })
-
-    await invalidateCache('stats:*')
-    await pubsub.publish(EVENTS.LEAVE_REQUEST_UPDATED(leaveRequest.jobId), updated)
-
-    const statusText = status === 'APPROVED' ? 'được duyệt' : 'bị từ chối'
-    await notificationService.createAndPublish(
-        leaveRequest.userId,
-        `Đơn xin nghỉ ${statusText}`,
-        reply || `Đơn xin nghỉ của bạn đã ${statusText}`,
-        'APPROVAL', 'LEAVE', id
-    )
-
-    return updated
 }
 
-/**
- * Tạo đơn xin nghỉ (employee)
- */
-const createLeaveRequest = async (userId, jobId, input) => {
+// ── Mutation: tạo yêu cầu nghỉ phép (employee) ──
+const createLeaveRequest = async (userId, input) => {
+    // Kiểm tra user có trong job không
     const userInJob = await prisma.userJoinedJob.findFirst({
-        where: { jobId, userId, status: 'APPROVED' },
+        where: { userId, jobId: input.jobId, status: 'APPROVED' },
     })
-    if (!userInJob) throw new Error('Bạn không thuộc công việc này')
-
-    const existingRequest = await prisma.leaveRequest.findFirst({
-        where: {
-            userId, jobId, status: 'PENDING',
-            OR: [{
-                startDate: { lte: new Date(input.endDate) },
-                endDate: { gte: new Date(input.startDate) },
-            }],
-        },
-    })
-    if (existingRequest) throw new Error('Đã có đơn xin nghỉ trong khoảng thời gian này đang chờ duyệt')
+    if (!userInJob) throw new Error('Bạn chưa tham gia công việc này')
 
     const leaveRequest = await prisma.leaveRequest.create({
         data: {
-            userId, jobId,
+            userId,
+            jobId: input.jobId,
             leaveType: input.leaveType,
             startDate: new Date(input.startDate),
             endDate: new Date(input.endDate),
             reason: input.reason,
             status: 'PENDING',
         },
-        include: { user: true, job: true },
+        include: INCLUDE_RELATIONS,
     })
 
-    await invalidateCache('stats:*')
-    await pubsub.publish(EVENTS.NEW_LEAVE_REQUEST_BY_JOB(jobId), leaveRequest)
+    // Publish cho manager của job
+    pubsub.publish(EVENTS.NEW_LEAVE_REQUEST_BY_JOB(input.jobId), {
+        managerReceivedLeaveRequest: {
+            status: 'success',
+            code: 200,
+            message: 'Có yêu cầu nghỉ phép mới',
+            data: leaveRequest,
+        },
+    })
 
-    // Notify managers
-    const managers = await prisma.jobManager.findMany({
-        where: { jobId },
+    // Tạo notification cho managers của job
+    const jobManagers = await prisma.jobManager.findMany({
+        where: { jobId: input.jobId },
         select: { userId: true },
     })
-    for (const manager of managers) {
-        await notificationService.createAndPublish(
-            manager.userId, 'Có đơn xin nghỉ mới',
-            `Nhân viên yêu cầu xin nghỉ từ ${input.startDate} đến ${input.endDate}`,
-            'LEAVE', 'LEAVE', leaveRequest.id
-        )
+    const employeeName = leaveRequest.user?.profile?.fullName || 'Nhân viên'
+    for (const jm of jobManagers) {
+        await createAndPublishNotification({
+            userId: jm.userId,
+            title: 'Yêu cầu nghỉ phép mới',
+            content: `${employeeName} đã gửi yêu cầu nghỉ phép`,
+            type: 'LEAVE',
+            refType: 'LEAVE_REQUEST',
+            refId: leaveRequest.id,
+        })
     }
 
-    return leaveRequest
+    return {
+        status: 'success',
+        code: 201,
+        message: 'Tạo yêu cầu nghỉ phép thành công',
+        data: leaveRequest,
+    }
 }
 
-/**
- * Tạo đơn xin nghỉ thủ công (manager, đã duyệt)
- */
-const createManualLeaveRequest = async (managerId, input) => {
-    const { jobId, userId, leaveType, startDate, endDate, reason } = input
-    await verifyManagerOfJob(managerId, jobId)
-
-    const userInJob = await prisma.userJoinedJob.findFirst({
-        where: { jobId, userId, status: 'APPROVED' },
+// ── Mutation: huỷ yêu cầu nghỉ phép (employee) ──
+const cancelLeaveRequest = async (userId, input) => {
+    const leaveRequest = await prisma.leaveRequest.findFirst({
+        where: { id: input.leaveRequestId, userId },
     })
-    if (!userInJob) throw new Error('Nhân viên không thuộc công việc này')
+    if (!leaveRequest) throw new Error('Yêu cầu nghỉ phép không tồn tại')
+    if (leaveRequest.status !== 'PENDING') throw new Error('Chỉ có thể huỷ yêu cầu đang chờ duyệt')
+
+    const updated = await prisma.leaveRequest.update({
+        where: { id: input.leaveRequestId },
+        data: {
+            status: 'CANCELED',
+            reply: input.reason || 'Đã huỷ bởi nhân viên',
+        },
+        include: INCLUDE_RELATIONS,
+    })
+
+    // Publish cho manager của job để cập nhật table realtime
+    pubsub.publish(EVENTS.NEW_LEAVE_REQUEST_BY_JOB(leaveRequest.jobId), {
+        managerReceivedLeaveRequest: {
+            status: 'success',
+            code: 200,
+            message: 'Yêu cầu nghỉ phép đã được huỷ bởi nhân viên',
+            data: updated,
+        },
+    })
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Huỷ yêu cầu nghỉ phép thành công',
+        data: updated,
+    }
+}
+
+// ── Mutation: review yêu cầu nghỉ phép (manager) ──
+const reviewLeaveRequest = async (approverId, input) => {
+    const leaveRequest = await prisma.leaveRequest.findUnique({
+        where: { id: input.leaveRequestId },
+    })
+    if (!leaveRequest) throw new Error('Yêu cầu nghỉ phép không tồn tại')
+    if (leaveRequest.status !== 'PENDING') throw new Error('Yêu cầu này đã được xử lý')
+
+    // Kiểm tra manager có quản lý job này không
+    const isManager = await prisma.jobManager.findFirst({
+        where: { jobId: leaveRequest.jobId, userId: approverId },
+    })
+    if (!isManager) throw new Error('Bạn không phải manager của công việc này')
+
+    const decision = String(input.approve || '').toUpperCase()
+    if (!['APPROVED', 'REJECTED'].includes(decision)) {
+        throw new Error('Trạng thái duyệt không hợp lệ, chỉ chấp nhận APPROVED hoặc REJECTED')
+    }
+
+    const isApproved = decision === 'APPROVED'
+    const newStatus = isApproved ? 'APPROVED' : 'REJECTED'
+    const updated = await prisma.leaveRequest.update({
+        where: { id: input.leaveRequestId },
+        data: {
+            status: newStatus,
+            reply: input.reply || null,
+            approvedBy: approverId,
+            approverAt: new Date(),
+        },
+        include: INCLUDE_RELATIONS,
+    })
+
+    // Publish cho employee
+    pubsub.publish(EVENTS.EMPLOYEE_LEAVE_STATUS(leaveRequest.userId), {
+        employeeReceivedLeaveRequestStatus: {
+            status: 'success',
+            code: 200,
+            message: isApproved
+                ? 'Yêu cầu nghỉ phép đã được phê duyệt'
+                : 'Yêu cầu nghỉ phép đã bị từ chối',
+            data: updated,
+        },
+    })
+
+    // Tạo notification cho employee
+    await createAndPublishNotification({
+        userId: leaveRequest.userId,
+        title: isApproved ? 'Nghỉ phép được duyệt' : 'Nghỉ phép bị từ chối',
+        content: isApproved
+            ? `Yêu cầu nghỉ phép của bạn đã được phê duyệt${input.reply ? `: ${input.reply}` : ''}`
+            : `Yêu cầu nghỉ phép của bạn đã bị từ chối${input.reply ? `: ${input.reply}` : ''}`,
+        type: 'APPROVAL',
+        refType: 'LEAVE_REQUEST',
+        refId: leaveRequest.id,
+    })
+
+    return {
+        status: 'success',
+        code: 200,
+        message: isApproved ? 'Phê duyệt thành công' : 'Từ chối thành công',
+        data: updated,
+    }
+}
+
+// ── Mutation: tạo nghỉ bù cho employee (manager) ──
+const createCompensatoryLeaveRequestForEmployee = async (approverId, input) => {
+    // Kiểm tra manager có quản lý job này không
+    const isManager = await prisma.jobManager.findFirst({
+        where: { jobId: input.jobId, userId: approverId },
+    })
+    if (!isManager) throw new Error('Bạn không phải manager của công việc này')
 
     const leaveRequest = await prisma.leaveRequest.create({
         data: {
-            userId, jobId, leaveType,
-            startDate: new Date(startDate),
-            endDate: new Date(endDate),
-            reason,
+            userId: input.userId,
+            jobId: input.jobId,
+            leaveType: input.leaveType,
+            startDate: new Date(input.startDate),
+            endDate: new Date(input.endDate),
+            reason: input.reason,
             status: 'APPROVED',
-            approvedBy: managerId,
+            approvedBy: approverId,
             approverAt: new Date(),
         },
-        include: { user: true, job: true, approver: true },
+        include: INCLUDE_RELATIONS,
     })
 
-    await invalidateCache('stats:*')
-    return leaveRequest
+    // Thông báo cho employee
+    await createAndPublishNotification({
+        userId: input.userId,
+        title: 'Nghỉ bù được tạo',
+        content: `Manager đã tạo nghỉ bù cho bạn: ${input.reason}`,
+        type: 'LEAVE',
+        refType: 'LEAVE_REQUEST',
+        refId: leaveRequest.id,
+    })
+
+    return {
+        status: 'success',
+        code: 201,
+        message: 'Tạo nghỉ bù cho nhân viên thành công',
+        data: leaveRequest,
+    }
 }
 
 export default {
-    getLeaveRequestsByJob,
     getLeaveRequestsByEmployee,
-    reviewLeaveRequest,
+    getLeaveRequestsByJob,
     createLeaveRequest,
-    createManualLeaveRequest,
+    cancelLeaveRequest,
+    reviewLeaveRequest,
+    createCompensatoryLeaveRequestForEmployee,
 }

@@ -83,6 +83,44 @@ export const verifyAccessToken = (token) => {
   }
 }
 
+export const verifyAccessTokenDetailed = (token) => {
+  if (!token) {
+    return {
+      decoded: null,
+      reason: 'TOKEN_MISSING',
+    };
+  }
+
+  try {
+    const secret = process.env.ACCESS_TOKEN_SECRET;
+    const decoded = jwt.verify(token, secret);
+
+    return {
+      decoded,
+      reason: null,
+    };
+  } catch (err) {
+    if (err?.name === 'TokenExpiredError') {
+      return {
+        decoded: null,
+        reason: 'TOKEN_EXPIRED',
+      };
+    }
+
+    if (err?.name === 'NotBeforeError') {
+      return {
+        decoded: null,
+        reason: 'TOKEN_NOT_ACTIVE',
+      };
+    }
+
+    return {
+      decoded: null,
+      reason: 'TOKEN_INVALID',
+    };
+  }
+}
+
 export const generateRefreshToken = (data) => {
   const payload = {
     ...data

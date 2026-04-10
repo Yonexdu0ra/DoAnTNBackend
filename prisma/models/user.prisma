@@ -10,12 +10,15 @@ model User {
   role             Role      @default(EMPLOYEE)
   // sort delete
   deletedAt        DateTime? @map("deleted_at")
-
+  departmentId String? @map("department_id")
+  positionId   String? @map("position_id")
   // time stamps
   createdAt DateTime     @default(now()) @map("created_at")
   updatedAt DateTime     @updatedAt @map("updated_at")
   sessions  Session[]
   devices   UserDevice[]
+  department Department? @relation("DepartmentUsers", fields: [departmentId], references: [id])
+  position   Position?   @relation("PositionUsers", fields: [positionId], references: [id])
 
   jobManagers              JobManager[]
   userJoinedJobs           UserJoinedJob[]

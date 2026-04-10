@@ -1,0 +1,10 @@
+model Position {
+    id           String     @id @default(uuid(7))
+    name         String
+    description  String?
+    departmentId String?    @map("department_id")
+    department   Department? @relation("DepartmentPositions", fields: [departmentId], references: [id])
+    users        User[]     @relation("PositionUsers")
+    createdAt    DateTime   @default(now())
+    updatedAt    DateTime   @updatedAt
+}

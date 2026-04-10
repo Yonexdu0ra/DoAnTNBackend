@@ -1,165 +1,312 @@
 import prisma from '../configs/prismaClient.js'
-import { invalidateCache } from '../utils/redisCache.js'
-import { buildPagePaginationArgs, buildCursorPaginationArgs, processCursorResult } from '../utils/pagination.js'
-import { verifyManagerOfJob } from './job.service.js'
+import {
+    buildPagePaginationArgs,
+    buildCursorPaginationArgs,
+    processCursorResult,
+    buildPrismaFilter,
+} from '../utils/pagination.js'
 import { pubsub, EVENTS } from '../configs/pubsub.js'
-import notificationService from './notification.service.js'
+import { createAndPublishNotification } from './notification.service.js'
 
-/**
- * Danh sách đơn xin OT theo job (manager)
- */
-const getOvertimeRequestsByJob = async (managerId, jobId, pagination, orderBy, search, select = {}) => {
-    await verifyManagerOfJob(managerId, jobId)
+const KEYWORD_FIELDS = ['reason', 'reply']
+const IN_FIELD_MAP = { statusIn: 'status' }
+const INCLUDE_RELATIONS = {
+    user: { include: { profile: true, department: true, position: true } },
+    job: true,
+    approver: { include: { profile: true, department: true, position: true } },
+}
 
-    const paginationArgs = buildPagePaginationArgs(pagination, orderBy, search, { jobId })
+// ── Query: yêu cầu OT của employee (cursor-based) ──
+const getOvertimeRequestsByEmployee = async (
+    userId,
+    pagination,
+    orderBy,
+    filter,
+    select,
+) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
+    })
+
+    const limit = pagination?.limit || 10
+    const args = buildCursorPaginationArgs(pagination, orderBy, null, {
+        userId,
+        ...filterWhere,
+    })
+
+    const items = await prisma.overtimeRequest.findMany({
+        ...args,
+        ...(select ? { select } : {}),
+    })
+    const { data, nextCursor } = processCursorResult(items, limit)
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Lấy danh sách yêu cầu OT thành công',
+        data,
+        pagination: {
+            limit,
+            nextCursor,
+            hasNextPage: !!nextCursor,
+        },
+    }
+}
+
+// ── Query: yêu cầu OT theo job (manager, page-based) ──
+const getOvertimeRequestsByJob = async (
+    jobId,
+    pagination,
+    orderBy,
+    filter,
+    select,
+) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
+    })
+
+    const args = buildPagePaginationArgs(pagination, orderBy, null, {
+        jobId,
+        ...filterWhere,
+    })
 
     const [data, total] = await Promise.all([
         prisma.overtimeRequest.findMany({
-            ...paginationArgs,
-            ...select.select?.data ? { select: select.select.data.select } : {},
+            ...args,
+            ...(select ? { select } : {}),
         }),
-        prisma.overtimeRequest.count({ where: paginationArgs.where }),
+        prisma.overtimeRequest.count({ where: args.where }),
     ])
 
-    return { data, total }
-}
-
-/**
- * Danh sách đơn xin OT của employee (cursor)
- */
-const getOvertimeRequestsByEmployee = async (userId, pagination, orderBy, search, select = {}) => {
+    const page = pagination?.page || 1
     const limit = pagination?.limit || 10
-    const paginationArgs = buildCursorPaginationArgs(pagination, orderBy, search, { userId })
+    const totalPages = Math.ceil(total / limit)
 
-    const overtimeRequests = await prisma.overtimeRequest.findMany({
-        ...paginationArgs,
-        ...select.select?.data ? { select: select.select.data.select } : {},
-    })
-
-    return processCursorResult(overtimeRequests, limit)
-}
-
-/**
- * Phê duyệt / từ chối đơn OT (manager)
- */
-const reviewOvertimeRequest = async (id, status, reply, managerId) => {
-    const overtimeRequest = await prisma.overtimeRequest.findUnique({
-        where: { id },
-        include: { job: true, user: true },
-    })
-    if (!overtimeRequest) throw new Error('Đơn xin làm thêm không tồn tại')
-
-    await verifyManagerOfJob(managerId, overtimeRequest.jobId)
-
-    if (overtimeRequest.status !== 'PENDING') {
-        throw new Error('Đơn xin làm thêm đã được xử lý')
-    }
-
-    const updated = await prisma.overtimeRequest.update({
-        where: { id },
-        data: {
-            status, reply,
-            approvedBy: managerId,
-            approverAt: new Date(),
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Lấy danh sách yêu cầu OT theo công việc thành công',
+        data,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNextPage: page < totalPages,
+            hasPrevPage: page > 1,
         },
-        include: { user: true, job: true, approver: true },
-    })
-
-    await invalidateCache('stats:*')
-    await pubsub.publish(EVENTS.OVERTIME_REQUEST_UPDATED(overtimeRequest.jobId), updated)
-
-    const statusText = status === 'APPROVED' ? 'được duyệt' : 'bị từ chối'
-    await notificationService.createAndPublish(
-        overtimeRequest.userId,
-        `Đơn xin làm thêm ${statusText}`,
-        reply || `Đơn xin làm thêm của bạn đã ${statusText}`,
-        'APPROVAL', 'OVERTIME', id
-    )
-
-    return updated
+    }
 }
 
-/**
- * Tạo đơn xin OT (employee)
- */
-const createOvertimeRequest = async (userId, jobId, input) => {
+// ── Mutation: tạo yêu cầu OT (employee) ──
+const createOvertimeRequest = async (userId, input) => {
+    // Kiểm tra user có trong job không
     const userInJob = await prisma.userJoinedJob.findFirst({
-        where: { jobId, userId, status: 'APPROVED' },
+        where: { userId, jobId: input.jobId, status: 'APPROVED' },
     })
-    if (!userInJob) throw new Error('Bạn không thuộc công việc này')
+    if (!userInJob) throw new Error('Bạn chưa tham gia công việc này')
 
-    const start = new Date(input.startTime)
-    const end = new Date(input.endTime)
-    const minutes = Math.round((end - start) / (1000 * 60))
-    if (minutes <= 0) throw new Error('Thời gian kết thúc phải sau thời gian bắt đầu')
+    // Tính minutes nếu chưa có
+    const startTime = new Date(input.startTime)
+    const endTime = new Date(input.endTime)
+    const minutes = input.minutes || Math.round((endTime - startTime) / 60000)
 
     const overtimeRequest = await prisma.overtimeRequest.create({
         data: {
-            userId, jobId,
+            userId,
+            jobId: input.jobId,
             date: new Date(input.date),
-            startTime: start, endTime: end,
-            minutes, reason: input.reason,
+            startTime,
+            endTime,
+            minutes,
+            reason: input.reason,
             status: 'PENDING',
         },
-        include: { user: true, job: true },
+        include: INCLUDE_RELATIONS,
     })
 
-    await invalidateCache('stats:*')
-    await pubsub.publish(EVENTS.NEW_OVERTIME_REQUEST_BY_JOB(jobId), overtimeRequest)
+    // Publish cho manager
+    pubsub.publish(EVENTS.NEW_OVERTIME_REQUEST_BY_JOB(input.jobId), {
+        managerReceivedOvertimeRequest: {
+            status: 'success',
+            code: 200,
+            message: 'Có yêu cầu OT mới',
+            data: overtimeRequest,
+        },
+    })
 
-    const managers = await prisma.jobManager.findMany({
-        where: { jobId },
+    // Tạo notification cho managers
+    const jobManagers = await prisma.jobManager.findMany({
+        where: { jobId: input.jobId },
         select: { userId: true },
     })
-    for (const manager of managers) {
-        await notificationService.createAndPublish(
-            manager.userId, 'Có đơn xin làm thêm mới',
-            `Nhân viên yêu cầu làm thêm ${minutes} phút vào ngày ${input.date}`,
-            'OVERTIME', 'OVERTIME', overtimeRequest.id
-        )
+    const employeeName = overtimeRequest.user?.profile?.fullName || 'Nhân viên'
+    for (const jm of jobManagers) {
+        await createAndPublishNotification({
+            userId: jm.userId,
+            title: 'Yêu cầu OT mới',
+            content: `${employeeName} đã gửi yêu cầu làm thêm giờ (${minutes} phút)`,
+            type: 'OVERTIME',
+            refType: 'OVERTIME_REQUEST',
+            refId: overtimeRequest.id,
+        })
     }
 
-    return overtimeRequest
+    return {
+        status: 'success',
+        code: 201,
+        message: 'Tạo yêu cầu OT thành công',
+        data: overtimeRequest,
+    }
 }
 
-/**
- * Tạo đơn OT thủ công (manager, đã duyệt)
- */
-const createManualOvertimeRequest = async (managerId, input) => {
-    const { jobId, userId, date, startTime, endTime, reason } = input
-    await verifyManagerOfJob(managerId, jobId)
-
-    const userInJob = await prisma.userJoinedJob.findFirst({
-        where: { jobId, userId, status: 'APPROVED' },
+// ── Mutation: huỷ yêu cầu OT (employee) ──
+const cancelOvertimeRequest = async (userId, input) => {
+    const request = await prisma.overtimeRequest.findFirst({
+        where: { id: input.overtimeRequestId, userId },
     })
-    if (!userInJob) throw new Error('Nhân viên không thuộc công việc này')
+    if (!request) throw new Error('Yêu cầu OT không tồn tại')
+    if (request.status !== 'PENDING') throw new Error('Chỉ có thể huỷ yêu cầu đang chờ duyệt')
 
-    const start = new Date(startTime)
-    const end = new Date(endTime)
-    const minutes = Math.round((end - start) / (1000 * 60))
-    if (minutes <= 0) throw new Error('Thời gian kết thúc phải sau thời gian bắt đầu')
+    const updated = await prisma.overtimeRequest.update({
+        where: { id: input.overtimeRequestId },
+        data: {
+            status: 'CANCELED',
+            reply: input.reason || 'Đã huỷ bởi nhân viên',
+        },
+        include: INCLUDE_RELATIONS,
+    })
+
+    // Publish cho manager của job để cập nhật table realtime
+    pubsub.publish(EVENTS.NEW_OVERTIME_REQUEST_BY_JOB(request.jobId), {
+        managerReceivedOvertimeRequest: {
+            status: 'success',
+            code: 200,
+            message: 'Yêu cầu OT đã được huỷ bởi nhân viên',
+            data: updated,
+        },
+    })
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Huỷ yêu cầu OT thành công',
+        data: updated,
+    }
+}
+
+// ── Mutation: review yêu cầu OT (manager) ──
+const reviewOvertimeRequest = async (approverId, input) => {
+    const request = await prisma.overtimeRequest.findUnique({
+        where: { id: input.overtimeRequestId },
+    })
+    if (!request) throw new Error('Yêu cầu OT không tồn tại')
+    if (request.status !== 'PENDING') throw new Error('Yêu cầu này đã được xử lý')
+
+    // Kiểm tra manager có quản lý job này không
+    const isManager = await prisma.jobManager.findFirst({
+        where: { jobId: request.jobId, userId: approverId },
+    })
+    if (!isManager) throw new Error('Bạn không phải manager của công việc này')
+
+    const decision = String(input.approve || '').toUpperCase()
+    if (!['APPROVED', 'REJECTED'].includes(decision)) {
+        throw new Error('Trạng thái duyệt không hợp lệ, chỉ chấp nhận APPROVED hoặc REJECTED')
+    }
+
+    const isApproved = decision === 'APPROVED'
+    const newStatus = isApproved ? 'APPROVED' : 'REJECTED'
+    const updated = await prisma.overtimeRequest.update({
+        where: { id: input.overtimeRequestId },
+        data: {
+            status: newStatus,
+            reply: input.reply || null,
+            approvedBy: approverId,
+            approverAt: new Date(),
+        },
+        include: INCLUDE_RELATIONS,
+    })
+
+    // Publish cho employee
+    pubsub.publish(EVENTS.EMPLOYEE_OVERTIME_STATUS(request.userId), {
+        employeeReceivedOvertimeRequestStatus: {
+            status: 'success',
+            code: 200,
+            message: isApproved
+                ? 'Yêu cầu OT đã được phê duyệt'
+                : 'Yêu cầu OT đã bị từ chối',
+            data: updated,
+        },
+    })
+
+    // Tạo notification cho employee
+    await createAndPublishNotification({
+        userId: request.userId,
+        title: isApproved ? 'OT được duyệt' : 'OT bị từ chối',
+        content: isApproved
+            ? `Yêu cầu OT của bạn đã được phê duyệt${input.reply ? `: ${input.reply}` : ''}`
+            : `Yêu cầu OT của bạn đã bị từ chối${input.reply ? `: ${input.reply}` : ''}`,
+        type: 'APPROVAL',
+        refType: 'OVERTIME_REQUEST',
+        refId: request.id,
+    })
+
+    return {
+        status: 'success',
+        code: 200,
+        message: isApproved ? 'Phê duyệt OT thành công' : 'Từ chối OT thành công',
+        data: updated,
+    }
+}
+
+// ── Mutation: tạo OT bù cho employee (manager) ──
+const createCompensatoryOvertimeRequestForEmployee = async (approverId, input) => {
+    const isManager = await prisma.jobManager.findFirst({
+        where: { jobId: input.jobId, userId: approverId },
+    })
+    if (!isManager) throw new Error('Bạn không phải manager của công việc này')
 
     const overtimeRequest = await prisma.overtimeRequest.create({
         data: {
-            userId, jobId,
-            date: new Date(date),
-            startTime: start, endTime: end,
-            minutes, reason,
+            userId: input.userId,
+            jobId: input.jobId,
+            date: new Date(input.date),
+            startTime: new Date(input.startTime),
+            endTime: new Date(input.endTime),
+            minutes: input.minutes,
+            reason: input.reason,
             status: 'APPROVED',
-            approvedBy: managerId,
+            approvedBy: approverId,
             approverAt: new Date(),
         },
-        include: { user: true, job: true, approver: true },
+        include: INCLUDE_RELATIONS,
     })
 
-    await invalidateCache('stats:*')
-    return overtimeRequest
+    // Thông báo cho employee
+    await createAndPublishNotification({
+        userId: input.userId,
+        title: 'OT bù được tạo',
+        content: `Manager đã tạo OT bù cho bạn: ${input.reason}`,
+        type: 'OVERTIME',
+        refType: 'OVERTIME_REQUEST',
+        refId: overtimeRequest.id,
+    })
+
+    return {
+        status: 'success',
+        code: 201,
+        message: 'Tạo OT bù cho nhân viên thành công',
+        data: overtimeRequest,
+    }
 }
 
 export default {
-    getOvertimeRequestsByJob,
     getOvertimeRequestsByEmployee,
-    reviewOvertimeRequest,
+    getOvertimeRequestsByJob,
     createOvertimeRequest,
-    createManualOvertimeRequest,
+    cancelOvertimeRequest,
+    reviewOvertimeRequest,
+    createCompensatoryOvertimeRequestForEmployee,
 }

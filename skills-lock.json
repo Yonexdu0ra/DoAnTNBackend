@@ -1,0 +1,50 @@
+{
+  "version": 1,
+  "skills": {
+    "apollo-client": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "computedHash": "ae82ac8ee2b1de548a83ebee3c470391aa11ba2948ccd79448b9c9101384016e"
+    },
+    "apollo-connectors": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "computedHash": "65030bfddd68b79f9ee29c27ac38c9c997c3de782b8b7819ab58ea25036b90a8"
+    },
+    "apollo-federation": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "computedHash": "21ef45c17db1f1cd5450e87b971698a843d5b7aa2e66e070774c8198892c6954"
+    },
+    "apollo-mcp-server": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "computedHash": "7bf2b3403ef5925e3dd78973b7035317b4957be05d6ef994749f3ab2ad6b1ef5"
+    },
+    "apollo-router": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "computedHash": "8f075254b3d855a2fe4d8cca5b5eaed76f344c3cb6fd06defb2a26ba031b0d26"
+    },
+    "apollo-server": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "computedHash": "48e0099a2515d5c3b905f5c3891e8d5291a3466d194524b5a8b49e56e0689533"
+    },
+    "graphql-operations": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "computedHash": "d0532171706cbba72112a6f3ffdc49d5d15b22fdd092de7324099e767bf1cbf1"
+    },
+    "graphql-schema": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "computedHash": "92b5f143d4d7f80a2fd5fe5421bccaa0ec35b1f9f4acdf3f71a019191cf3c4a4"
+    },
+    "skill-creator": {
+      "source": "apollographql/skills",
+      "sourceType": "github",
+      "computedHash": "44def51b2bb66c2eafe75e8f29ae8ace901531b4eb47cffd1fb7cf3109631092"
+    }
+  }
+}

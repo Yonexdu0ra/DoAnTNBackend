@@ -4,6 +4,8 @@ model Profile {
   fullName String  @map("full_name") @db.VarChar(255)
   address  String
   avatarUrl String? @map("avatar_url") @default("https://github.com/shadcn.png")
+  gender   GenderType 
+  birthday DateTime
   bio      String?
   user     User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 

@@ -1,263 +1,400 @@
 import prisma from '../configs/prismaClient.js'
-import { getCache, setCache, invalidateCache, CACHE_KEYS, CACHE_TTL } from '../utils/redisCache.js'
-import { buildPagePaginationArgs } from '../utils/pagination.js'
+import { buildPagePaginationArgs, buildPrismaFilter } from '../utils/pagination.js'
+import { createAuditLog } from '../utils/auditLog.js'
 import { hashPassword } from '../utils/hash.js'
 import { generateId } from '../utils/generateId.js'
-import { createAuditLog } from '../utils/auditLog.js'
 
-const DEFAULT_PASSWORD = '123456'
+const KEYWORD_FIELDS = ['email', 'phone', 'code', 'profile.fullName']
+const IN_FIELD_MAP = { roleIn: 'role' }
+const INCLUDE_PROFILE = {
+    profile: true,
+    department: true,
+    position: true,
+}
+const SOFT_DELETE_CONDITION = { deletedAt: null }
 
-/**
- * Lấy thông tin user hiện tại
- */
-const getMe = async (userId, select = {}) => {
+// ── Query: thông tin user hiện tại ──
+const me = async (userId, select) => {
     const user = await prisma.user.findUnique({
-        where: { id: userId, deletedAt: null },
-        ...select,
+        where: { id: userId },
+        ...(select ? { select } : {}),
     })
-    if (!user) throw new Error('Không tìm thấy người dùng')
-    return user
-}
+    if (!user) throw new Error('Tài khoản không tồn tại')
 
-/**
- * Tìm kiếm employee theo email hoặc code
- */
-const searchEmployee = async (search, select = {}) => {
-    if (!search?.field || !search?.value) return []
-
-    const allowedFields = ['email', 'code']
-    if (!allowedFields.includes(search.field)) {
-        throw new Error(`Chỉ được tìm kiếm theo: ${allowedFields.join(', ')}`)
+    return {
+        status: 'success',
+        code: 200,
+        message: 'OK',
+        data: user,
     }
-
-    return prisma.user.findMany({
-        where: {
-            role: 'EMPLOYEE',
-            deletedAt: null,
-            [search.field]: { contains: search.value, mode: 'insensitive' },
-        },
-        take: 20,
-        ...select,
-    })
 }
 
-/**
- * Tìm kiếm manager theo email hoặc code
- */
-const searchManager = async (search, select = {}) => {
-    if (!search?.field || !search?.value) return []
-
-    const allowedFields = ['email', 'code']
-    if (!allowedFields.includes(search.field)) {
-        throw new Error(`Chỉ được tìm kiếm theo: ${allowedFields.join(', ')}`)
-    }
-
-    return prisma.user.findMany({
-        where: {
-            role: 'MANAGER',
-            deletedAt: null,
-            [search.field]: { contains: search.value, mode: 'insensitive' },
-        },
-        take: 20,
-        ...select,
+// ── Query: danh sách users (admin, page-based) ──
+const getUsers = async (pagination, orderBy, filter, select) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
     })
-}
 
-/**
- * Phân trang danh sách users (admin)
- */
-const getUsers = async (pagination, orderBy, search, select = {}) => {
-    const page = pagination?.page || 1
-    const limit = pagination?.limit || 10
-    const cacheKey = CACHE_KEYS.USERS_LIST(
-        page, limit,
-        orderBy?.field || 'createdAt', orderBy?.direction || 'desc',
-        search?.field, search?.value
-    )
-
-    const cached = await getCache(cacheKey)
-    if (cached) return cached
-
-    const paginationArgs = buildPagePaginationArgs(pagination, orderBy, search, { deletedAt: null })
+    const args = buildPagePaginationArgs(pagination, orderBy, null, {
+        ...SOFT_DELETE_CONDITION,
+        ...filterWhere,
+    })
 
     const [data, total] = await Promise.all([
         prisma.user.findMany({
-            ...paginationArgs,
-            ...select.select?.data ? { select: select.select.data.select } : {},
+            ...args,
+            ...(select ? { select } : {}),
         }),
-        prisma.user.count({ where: paginationArgs.where }),
+        prisma.user.count({ where: args.where }),
     ])
 
-    const result = { data, total }
-    await setCache(cacheKey, result, CACHE_TTL.PAGINATED_LIST)
-    return result
+    const page = pagination?.page || 1
+    const limit = pagination?.limit || 10
+    const totalPages = Math.ceil(total / limit)
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Lấy danh sách người dùng thành công',
+        data,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNextPage: page < totalPages,
+            hasPrevPage: page > 1,
+        },
+    }
 }
 
-/**
- * Tạo user mới (admin)
- */
-const createUser = async (input, adminId) => {
-    const existingUser = await prisma.user.findFirst({
+// ── Query: tìm manager để thêm vào job (admin) ──
+const searchManager = async (search, filter, select) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
+    })
+
+    const where = {
+        ...SOFT_DELETE_CONDITION,
+        role: 'MANAGER',
+        ...filterWhere,
+    }
+
+    if (search) {
+        where.OR = [
+            { email: { contains: search, mode: 'insensitive' } },
+            { code: { contains: search, mode: 'insensitive' } },
+            { profile: { fullName: { contains: search, mode: 'insensitive' } } },
+        ]
+    }
+
+    const data = await prisma.user.findMany({
+        where,
+        ...(select ? { select } : {}),
+        take: 20,
+        orderBy: { createdAt: 'desc' },
+    })
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Tìm kiếm manager thành công',
+        data,
+        pagination: {
+            page: 1,
+            limit: 20,
+            total: data.length,
+            totalPages: 1,
+            hasNextPage: false,
+            hasPrevPage: false,
+        },
+    }
+}
+
+// ── Query: danh sách nhân viên trong job (manager) ──
+const getUsersByJob = async (
+    jobId,
+    pagination,
+    orderBy,
+    filter,
+    select,
+) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
+    })
+
+    const args = buildPagePaginationArgs(pagination, orderBy, null, {
+        ...SOFT_DELETE_CONDITION,
+        ...filterWhere,
+        userJoinedJobs: {
+            some: { jobId, status: 'APPROVED' },
+        },
+    })
+
+    const [data, total] = await Promise.all([
+        prisma.user.findMany({
+            ...args,
+            ...(select ? { select } : {}),
+        }),
+        prisma.user.count({ where: args.where }),
+    ])
+
+    const page = pagination?.page || 1
+    const limit = pagination?.limit || 10
+    const totalPages = Math.ceil(total / limit)
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Lấy danh sách nhân viên theo công việc thành công',
+        data,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNextPage: page < totalPages,
+            hasPrevPage: page > 1,
+        },
+    }
+}
+
+// ── Query: tìm nhân viên chưa tham gia job (manager) ──
+const searchEmployeesByJob = async (
+    jobId,
+    pagination,
+    orderBy,
+    filter,
+    select,
+) => {
+    const filterWhere = buildPrismaFilter(filter, {
+        keywordFields: KEYWORD_FIELDS,
+        inFieldMap: IN_FIELD_MAP,
+    })
+
+    const args = buildPagePaginationArgs(pagination, orderBy, null, {
+        ...SOFT_DELETE_CONDITION,
+        role: 'EMPLOYEE',
+        ...filterWhere,
+        NOT: {
+            userJoinedJobs: {
+                some: { jobId },
+            },
+        },
+    })
+    const [data, total] = await Promise.all([
+        prisma.user.findMany({
+            ...args,
+            ...(select ? { select } : {}),
+        }),
+        prisma.user.count({ where: args.where }),
+    ])
+
+    const page = pagination?.page || 1
+    const limit = pagination?.limit || 10
+    const totalPages = Math.ceil(total / limit)
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Tìm kiếm nhân viên thành công',
+        data,
+        pagination: {
+            page,
+            limit,
+            total,
+            totalPages,
+            hasNextPage: page < totalPages,
+            hasPrevPage: page > 1,
+        },
+    }
+}
+
+// ── Mutation: tạo user (admin) ──
+const createUser = async (input, adminUserId) => {
+    // Check trùng email hoặc phone
+    const exists = await prisma.user.findFirst({
         where: {
             OR: [{ email: input.email }, { phone: input.phone }],
         },
     })
-    if (existingUser) throw new Error('Email hoặc số điện thoại đã tồn tại')
+    if (exists) throw new Error('Email hoặc số điện thoại đã tồn tại')
 
-    const hashedPassword = await hashPassword(DEFAULT_PASSWORD)
-    const code = generateId(8)
+    // Tạo mã nhân viên nếu không có
+    const code = input.code || `EMP-${generateId(6)}`
+    // Mật khẩu mặc định
+    const defaultPassword = await hashPassword('123456')
 
     const user = await prisma.user.create({
         data: {
             email: input.email,
             phone: input.phone,
             code,
-            password: hashedPassword,
+            password: defaultPassword,
             role: input.role || 'EMPLOYEE',
+            biometricEnabled: input.biometricEnabled || false,
+            departmentId: input.departmentId || null,
+            positionId: input.positionId || null,
             ...(input.profile && {
                 profile: {
                     create: {
                         fullName: input.profile.fullName || '',
                         address: input.profile.address || '',
-                        avatarUrl: input.profile.avatarUrl,
-                        bio: input.profile.bio,
+                        gender: input.profile.gender,
+                        birthday: input.profile.birthday,
+                        avatarUrl: input.profile.avatarUrl || undefined,
+                        bio: input.profile.bio || null,
                     },
                 },
             }),
         },
-        include: { profile: true },
+        include: INCLUDE_PROFILE,
     })
 
-    await invalidateCache('users:*')
-    await invalidateCache('stats:admin')
-
     await createAuditLog({
-        userId: adminId,
+        userId: adminUserId,
         action: 'CREATE_USER',
         resource: 'User',
         resourceId: user.id,
         newValue: { ...user, password: undefined },
-        status: 'SUCCESS',
     })
 
-    return { user, code, defaultPassword: DEFAULT_PASSWORD }
+    return {
+        status: 'success',
+        code: 201,
+        message: 'Tạo người dùng thành công',
+        data: user,
+    }
 }
 
-/**
- * Cập nhật user (admin)
- */
-const updateUser = async (id, input, adminId) => {
-    const oldUser = await prisma.user.findUnique({
-        where: { id },
-        include: { profile: true },
+// ── Mutation: cập nhật user (admin) ──
+const updateUser = async (input, adminUserId) => {
+    const existing = await prisma.user.findUnique({
+        where: { id: input.userId },
+        include: INCLUDE_PROFILE,
     })
-    if (!oldUser) throw new Error('Người dùng không tồn tại')
+    if (!existing) throw new Error('Người dùng không tồn tại')
 
-    const user = await prisma.user.update({
-        where: { id },
-        data: {
-            ...(input.email !== undefined && { email: input.email }),
-            ...(input.phone !== undefined && { phone: input.phone }),
-            ...(input.role !== undefined && { role: input.role }),
-            ...(input.profile && {
-                profile: {
-                    upsert: {
-                        create: {
-                            fullName: input.profile.fullName || '',
-                            address: input.profile.address || '',
-                            avatarUrl: input.profile.avatarUrl,
-                            bio: input.profile.bio,
-                        },
-                        update: {
-                            ...(input.profile.fullName !== undefined && { fullName: input.profile.fullName }),
-                            ...(input.profile.address !== undefined && { address: input.profile.address }),
-                            ...(input.profile.avatarUrl !== undefined && { avatarUrl: input.profile.avatarUrl }),
-                            ...(input.profile.bio !== undefined && { bio: input.profile.bio }),
-                        },
-                    },
+    const updateData = {}
+    if (input.email !== undefined) updateData.email = input.email
+    if (input.phone !== undefined) updateData.phone = input.phone
+    if (input.code !== undefined) updateData.code = input.code
+    if (input.role !== undefined) updateData.role = input.role
+    if (input.biometricEnabled !== undefined) updateData.biometricEnabled = input.biometricEnabled
+    if (input.departmentId !== undefined) updateData.departmentId = input.departmentId
+    if (input.positionId !== undefined) updateData.positionId = input.positionId
+
+    if (input.profile) {
+        updateData.profile = {
+            upsert: {
+                create: {
+                    fullName: input.profile.fullName || '',
+                    address: input.profile.address || '',
+                    gender: input.profile.gender,
+                    birthday: input.profile.birthday,
+                    avatarUrl: input.profile.avatarUrl || undefined,
+                    bio: input.profile.bio || null,
                 },
-            }),
-        },
-        include: { profile: true },
-    })
+                update: {
+                    ...(input.profile.fullName !== undefined && { fullName: input.profile.fullName }),
+                    ...(input.profile.address !== undefined && { address: input.profile.address }),
+                    ...(input.profile.gender !== undefined && { gender: input.profile.gender }),
+                    ...(input.profile.birthday !== undefined && { birthday: input.profile.birthday }),
+                    ...(input.profile.avatarUrl !== undefined && { avatarUrl: input.profile.avatarUrl }),
+                    ...(input.profile.bio !== undefined && { bio: input.profile.bio }),
+                },
+            },
+        }
+    }
 
-    await invalidateCache('users:*')
-    await invalidateCache('stats:admin')
+    const updated = await prisma.user.update({
+        where: { id: input.userId },
+        data: updateData,
+        include: INCLUDE_PROFILE,
+    })
 
     await createAuditLog({
-        userId: adminId,
+        userId: adminUserId,
         action: 'UPDATE_USER',
         resource: 'User',
-        resourceId: id,
-        oldValue: { ...oldUser, password: undefined },
-        newValue: { ...user, password: undefined },
-        status: 'SUCCESS',
+        resourceId: updated.id,
+        oldValue: { ...existing, password: undefined },
+        newValue: { ...updated, password: undefined },
     })
 
-    return user
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Cập nhật người dùng thành công',
+        data: updated,
+    }
 }
 
-/**
- * Reset mật khẩu user (admin)
- */
-const resetPassword = async (id, adminId) => {
-    const user = await prisma.user.findUnique({ where: { id } })
-    if (!user) throw new Error('Người dùng không tồn tại')
+// ── Mutation: xoá user (soft delete, admin) ──
+const deleteUser = async (input, adminUserId) => {
+    const existing = await prisma.user.findUnique({
+        where: { id: input.userId },
+    })
+    if (!existing) throw new Error('Người dùng không tồn tại')
 
-    const hashedPassword = await hashPassword(DEFAULT_PASSWORD)
     await prisma.user.update({
-        where: { id },
-        data: { password: hashedPassword },
+        where: { id: input.userId },
+        data: { deletedAt: new Date() },
     })
 
     await createAuditLog({
-        userId: adminId,
+        userId: adminUserId,
+        action: 'DELETE_USER',
+        resource: 'User',
+        resourceId: input.userId,
+        oldValue: { ...existing, password: undefined },
+    })
+
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Xoá người dùng thành công',
+    }
+}
+
+// ── Mutation: reset mật khẩu (admin) ──
+const resetUserPassword = async (input, adminUserId) => {
+    const existing = await prisma.user.findUnique({
+        where: { id: input.userId },
+    })
+    if (!existing) throw new Error('Người dùng không tồn tại')
+
+    const defaultPassword = await hashPassword('123456')
+    await prisma.user.update({
+        where: { id: input.userId },
+        data: { password: defaultPassword },
+    })
+
+    await createAuditLog({
+        userId: adminUserId,
         action: 'RESET_PASSWORD',
         resource: 'User',
-        resourceId: id,
-        status: 'SUCCESS',
+        resourceId: input.userId,
     })
 
-    return { user, defaultPassword: DEFAULT_PASSWORD }
-}
-
-/**
- * Khóa/mở khóa tài khoản user (admin)
- */
-const toggleUserStatus = async (id, adminId) => {
-    const user = await prisma.user.findUnique({ where: { id } })
-    if (!user) throw new Error('Người dùng không tồn tại')
-
-    const isLocked = !!user.deletedAt
-    const updatedUser = await prisma.user.update({
-        where: { id },
-        data: { deletedAt: isLocked ? null : new Date() },
-        include: { profile: true },
-    })
-
-    await invalidateCache('users:*')
-    await invalidateCache('stats:admin')
-
-    await createAuditLog({
-        userId: adminId,
-        action: isLocked ? 'UNLOCK_USER' : 'LOCK_USER',
-        resource: 'User',
-        resourceId: id,
-        oldValue: { deletedAt: user.deletedAt },
-        newValue: { deletedAt: updatedUser.deletedAt },
-        status: 'SUCCESS',
-    })
-
-    return { user: updatedUser, isLocked }
+    return {
+        status: 'success',
+        code: 200,
+        message: 'Reset mật khẩu thành công. Mật khẩu mới: 123456',
+    }
 }
 
 export default {
-    getMe,
-    searchEmployee,
-    searchManager,
+    me,
     getUsers,
+    searchManager,
+    getUsersByJob,
+    searchEmployeesByJob,
     createUser,
     updateUser,
-    resetPassword,
-    toggleUserStatus,
+    deleteUser,
+    resetUserPassword,
 }

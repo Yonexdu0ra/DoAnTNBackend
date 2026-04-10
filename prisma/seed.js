@@ -8,6 +8,11 @@ const Role = Object.freeze({
   ADMIN: "ADMIN",
 });
 
+const GenderType = Object.freeze({
+  MALE: "MALE",
+  FEMALE: "FEMALE",
+});
+
 const StatusType = Object.freeze({
   PENDING: "PENDING",
   APPROVED: "APPROVED",
@@ -17,8 +22,8 @@ const StatusType = Object.freeze({
 
 const LeaveType = Object.freeze({
   SICK: "SICK",
-  VACATION: "VACATION",
-  PERSONAL: "PERSONAL",
+  VACATION: "ANNUAL",
+  PERSONAL: "PERSONAL_PAID",
   OTHER: "OTHER",
 });
 
@@ -41,11 +46,11 @@ const NotificationType = Object.freeze({
 });
 
 const HolidayType = Object.freeze({
-  NATIONAL: "NATIONAL",
-  RELIGIOUS: "RELIGIOUS",
-  CULTURAL: "CULTURAL",
-  COMPANY: "COMPANY",
-  OTHER: "OTHER",
+  NATIONAL: "PUBLIC_HOLIDAY",
+  RELIGIOUS: "PUBLIC_HOLIDAY",
+  CULTURAL: "PUBLIC_HOLIDAY",
+  COMPANY: "COMPANY_LEAVE",
+  OTHER: "UNPAID_LEAVE",
 });
 
 
@@ -57,6 +62,10 @@ function daysAgo(days) {
 
 function daysFromNow(days) {
   return new Date(now.getTime() + days * 24 * 60 * 60 * 1000);
+}
+
+function minutesAgo(minutes) {
+  return new Date(now.getTime() - minutes * 60 * 1000);
 }
 
 function atTime(baseDate, hour, minute = 0) {
@@ -76,7 +85,7 @@ function randomToken(prefix) {
 }
 
 async function clearData() {
-  await prisma.$transaction([
+  const cleanupOperations = [
     prisma.auditLog.deleteMany(),
     prisma.notification.deleteMany(),
     prisma.attendance.deleteMany(),
@@ -90,10 +99,141 @@ async function clearData() {
     prisma.holiday.deleteMany(),
     prisma.job.deleteMany(),
     prisma.user.deleteMany(),
-  ]);
+  ];
+
+  if (prisma.position && prisma.department) {
+    cleanupOperations.push(
+      prisma.position.deleteMany(),
+      prisma.department.deleteMany(),
+    );
+  }
+
+  await prisma.$transaction(cleanupOperations);
 }
 
-async function seedUsers() {
+async function seedDepartmentsAndPositions() {
+  if (!prisma.department || !prisma.position) {
+    console.warn("[seed] Skip department/position seed: Prisma client chua co 2 model nay.");
+    return {
+      departmentsByKey: {},
+      positionsByKey: {},
+    };
+  }
+
+  const departmentSeeds = [
+    {
+      key: "EXEC",
+      name: "Ban dieu hanh",
+      description: "Dieu hanh chung va quan tri he thong.",
+      positions: [
+        {
+          key: "SYS_ADMIN",
+          name: "System Administrator",
+          description: "Quan tri he thong, bao mat va phan quyen.",
+        },
+      ],
+    },
+    {
+      key: "TECH",
+      name: "Phong Ky thuat",
+      description: "Phat trien san pham va toi uu van hanh ky thuat.",
+      positions: [
+        {
+          key: "ENG_MANAGER",
+          name: "Engineering Manager",
+          description: "Quan ly nhom ky thuat va tien do du an.",
+        },
+        {
+          key: "BACKEND_DEV",
+          name: "Backend Developer",
+          description: "Phat trien API va nghiep vu he thong.",
+        },
+        {
+          key: "FRONTEND_DEV",
+          name: "Frontend Developer",
+          description: "Phat trien giao dien va trai nghiem nguoi dung.",
+        },
+        {
+          key: "MOBILE_DEV",
+          name: "Mobile Developer",
+          description: "Phat trien ung dung mobile cho nhan vien.",
+        },
+        {
+          key: "QA_ENGINEER",
+          name: "QA Engineer",
+          description: "Kiem thu va dam bao chat luong san pham.",
+        },
+        {
+          key: "DEVOPS_ENGINEER",
+          name: "DevOps Engineer",
+          description: "Quan ly CI/CD va ha tang trien khai.",
+        },
+      ],
+    },
+    {
+      key: "OPS",
+      name: "Phong Van hanh",
+      description: "Van hanh he thong va phan tich du lieu.",
+      positions: [
+        {
+          key: "OPS_MANAGER",
+          name: "Operations Manager",
+          description: "Quan ly van hanh, cham cong va SLA.",
+        },
+        {
+          key: "DATA_ANALYST",
+          name: "Data Analyst",
+          description: "Tong hop bao cao va phan tich dashboard.",
+        },
+      ],
+    },
+    {
+      key: "HR",
+      name: "Phong Nhan su",
+      description: "Van hanh quy trinh nhan su va hanh chinh.",
+      positions: [
+        {
+          key: "HR_SPECIALIST",
+          name: "HR Specialist",
+          description: "Quan ly nhan su va phe duyet chinh sach.",
+        },
+      ],
+    },
+  ];
+
+  const departmentsByKey = {};
+  const positionsByKey = {};
+
+  for (const departmentSeed of departmentSeeds) {
+    const createdDepartment = await prisma.department.create({
+      data: {
+        name: departmentSeed.name,
+        description: departmentSeed.description,
+      },
+    });
+
+    departmentsByKey[departmentSeed.key] = createdDepartment;
+
+    for (const positionSeed of departmentSeed.positions) {
+      const createdPosition = await prisma.position.create({
+        data: {
+          name: positionSeed.name,
+          description: positionSeed.description,
+          departmentId: createdDepartment.id,
+        },
+      });
+
+      positionsByKey[positionSeed.key] = createdPosition;
+    }
+  }
+
+  return {
+    departmentsByKey,
+    positionsByKey,
+  };
+}
+
+async function seedUsers(organization = {}) {
   const passwordHash = await bcrypt.hash("12345678", 10);
 
   const users = [
@@ -103,9 +243,13 @@ async function seedUsers() {
       phone: "0901000001",
       role: Role.ADMIN,
       biometricEnabled: true,
+      departmentKey: "EXEC",
+      positionKey: "SYS_ADMIN",
       profile: {
         fullName: "Phạm Ngọc Quý",
         address: "Quyết  Thắng Thái Nguyên",
+        gender: GenderType.MALE,
+        birthday: new Date("1990-04-15"),
         bio: "System administrator, quan ly he thong va van hanh bao mat.",
         avatarUrl: "https://github.com/shadcn.png"
       },
@@ -116,9 +260,13 @@ async function seedUsers() {
       phone: "0901000002",
       role: Role.MANAGER,
       biometricEnabled: true,
+      departmentKey: "TECH",
+      positionKey: "ENG_MANAGER",
       profile: {
         fullName: "Tran Hoang Linh",
         address: "45 Le Loi, Quan 3, TP.HCM",
+        gender: GenderType.FEMALE,
+        birthday: new Date("1991-09-20"),
         bio: "Quan ly phong Ky thuat.",
         avatarUrl: "https://github.com/shadcn.png"
       },
@@ -129,9 +277,13 @@ async function seedUsers() {
       phone: "0901000003",
       role: Role.MANAGER,
       biometricEnabled: false,
+      departmentKey: "OPS",
+      positionKey: "OPS_MANAGER",
       profile: {
         fullName: "Pham Duc Minh",
         address: "120 Pham Van Dong, Thu Duc, TP.HCM",
+        gender: GenderType.MALE,
+        birthday: new Date("1989-01-12"),
         bio: "Quan ly khoi Van hanh va cham cong.",
         avatarUrl: "https://github.com/shadcn.png"
       },
@@ -142,9 +294,13 @@ async function seedUsers() {
       phone: "0901000101",
       role: Role.EMPLOYEE,
       biometricEnabled: true,
+      departmentKey: "TECH",
+      positionKey: "BACKEND_DEV",
       profile: {
         fullName: "Le Thu An",
         address: "22 Vo Thi Sau, Quan 1, TP.HCM",
+        gender: GenderType.FEMALE,
+        birthday: new Date("1998-05-10"),
         bio: "Backend developer.",
         avatarUrl: "https://github.com/shadcn.png"
       },
@@ -155,9 +311,13 @@ async function seedUsers() {
       phone: "0901000102",
       role: Role.EMPLOYEE,
       biometricEnabled: true,
+      departmentKey: "TECH",
+      positionKey: "FRONTEND_DEV",
       profile: {
         fullName: "Nguyen Minh Khanh",
         address: "8 Xo Viet Nghe Tinh, Binh Thanh, TP.HCM",
+        gender: GenderType.MALE,
+        birthday: new Date("1997-03-22"),
         bio: "Frontend developer, phu trach dashboard.",
         avatarUrl: "https://github.com/shadcn.png"
       },
@@ -168,9 +328,13 @@ async function seedUsers() {
       phone: "0901000103",
       role: Role.EMPLOYEE,
       biometricEnabled: false,
+      departmentKey: "TECH",
+      positionKey: "QA_ENGINEER",
       profile: {
         fullName: "Vo Ngoc Hoa",
         address: "76 Dien Bien Phu, Quan 3, TP.HCM",
+        gender: GenderType.FEMALE,
+        birthday: new Date("1996-07-19"),
         bio: "QA engineer.",
         avatarUrl: "https://github.com/shadcn.png"
       },
@@ -181,9 +345,13 @@ async function seedUsers() {
       phone: "0901000104",
       role: Role.EMPLOYEE,
       biometricEnabled: true,
+      departmentKey: "TECH",
+      positionKey: "MOBILE_DEV",
       profile: {
         fullName: "Bui Anh Tuan",
         address: "15 Phan Dang Luu, Phu Nhuan, TP.HCM",
+        gender: GenderType.MALE,
+        birthday: new Date("1998-11-08"),
         bio: "Mobile developer.",
         avatarUrl: "https://github.com/shadcn.png"
       },
@@ -194,9 +362,13 @@ async function seedUsers() {
       phone: "0901000105",
       role: Role.EMPLOYEE,
       biometricEnabled: false,
+      departmentKey: "HR",
+      positionKey: "HR_SPECIALIST",
       profile: {
         fullName: "Do Thanh Mai",
         address: "101 Hoang Van Thu, Tan Binh, TP.HCM",
+        gender: GenderType.FEMALE,
+        birthday: new Date("1995-02-14"),
         bio: "Nhan su, theo doi phe duyet don.",
         avatarUrl: "https://github.com/shadcn.png"
       },
@@ -207,9 +379,13 @@ async function seedUsers() {
       phone: "0901000106",
       role: Role.EMPLOYEE,
       biometricEnabled: true,
+      departmentKey: "TECH",
+      positionKey: "DEVOPS_ENGINEER",
       profile: {
         fullName: "Ly Quoc Vinh",
         address: "9 Quang Trung, Go Vap, TP.HCM",
+        gender: GenderType.MALE,
+        birthday: new Date("1994-12-02"),
         bio: "DevOps engineer.",
         avatarUrl: "https://github.com/shadcn.png"
       },
@@ -220,9 +396,13 @@ async function seedUsers() {
       phone: "0901000107",
       role: Role.EMPLOYEE,
       biometricEnabled: false,
+      departmentKey: "OPS",
+      positionKey: "DATA_ANALYST",
       profile: {
         fullName: "Dang Thi Nhung",
         address: "55 Au Co, Tan Phu, TP.HCM",
+        gender: GenderType.FEMALE,
+        birthday: new Date("1999-06-30"),
         bio: "Data analyst.",
         avatarUrl: "https://github.com/shadcn.png"
       },
@@ -231,6 +411,9 @@ async function seedUsers() {
 
   const created = [];
   for (const user of users) {
+    const departmentId = organization.departmentsByKey?.[user.departmentKey]?.id || null;
+    const positionId = organization.positionsByKey?.[user.positionKey]?.id || null;
+
     const createdUser = await prisma.user.create({
       data: {
         code: user.code,
@@ -239,10 +422,14 @@ async function seedUsers() {
         password: passwordHash,
         biometricEnabled: user.biometricEnabled,
         role: user.role,
+        ...(departmentId ? { departmentId } : {}),
+        ...(positionId ? { positionId } : {}),
         profile: {
           create: {
             fullName: user.profile.fullName,
             address: user.profile.address,
+            gender: user.profile.gender || GenderType.MALE,
+            birthday: user.profile.birthday || new Date("1995-01-01"),
             bio: user.profile.bio,
             avatarUrl: user.profile.avatarUrl || "https://github.com/shadcn.png"
           },
@@ -692,56 +879,39 @@ async function seedAttendance(users, jobs) {
 async function seedNotificationsAndAudit(users) {
   const byCode = (code) => users.find((u) => u.code === code);
 
+  const NOTIFICATIONS_PER_USER = 20;
+  const notificationTypes = [
+    NotificationType.SYSTEM,
+    NotificationType.OVERTIME,
+    NotificationType.LEAVE,
+    NotificationType.APPROVAL,
+    NotificationType.REMINDER,
+  ];
+  const refTypes = ["JOB", "OVERTIME", "LEAVE", "HOLIDAY", "SYSTEM", "SECURITY"];
+
+  const notifications = users.flatMap((user, userIndex) => {
+    return Array.from({ length: NOTIFICATIONS_PER_USER }, (_, index) => {
+      const serial = index + 1;
+      const minuteOffset = userIndex * 240 + (NOTIFICATIONS_PER_USER - serial) * 7 + 5;
+      const createdAt = minutesAgo(minuteOffset);
+      const isRead = serial <= 12;
+
+      return {
+        userId: user.id,
+        title: `Thong bao #${serial} cho ${user.code}`,
+        content: `Ban co thong bao #${serial} tu he thong quan ly cong viec.`,
+        type: notificationTypes[(userIndex + index) % notificationTypes.length],
+        isRead,
+        readAt: isRead ? new Date(createdAt.getTime() + 2 * 60 * 1000) : null,
+        refType: refTypes[(userIndex * 2 + index) % refTypes.length],
+        refId: `${user.code.toLowerCase()}-notification-${String(serial).padStart(2, "0")}`,
+        createdAt,
+      };
+    });
+  });
+
   await prisma.notification.createMany({
-    data: [
-      {
-        userId: byCode("EMP002").id,
-        title: "Don OT da duoc phe duyet",
-        content: "Yeu cau OT ngay hom qua da duoc phe duyet 150 phut.",
-        type: NotificationType.OVERTIME,
-        isRead: false,
-        refType: "OVERTIME_REQUEST",
-        refId: "sample-ot-001",
-      },
-      {
-        userId: byCode("EMP003").id,
-        title: "Nhac nho cap nhat don nghi",
-        content: "Don nghi phep cua ban dang cho phe duyet, vui long bo sung ban giao cong viec.",
-        type: NotificationType.REMINDER,
-        isRead: true,
-        readAt: daysAgo(1),
-        refType: "LEAVE_REQUEST",
-        refId: "sample-leave-001",
-      },
-      {
-        userId: byCode("MGR001").id,
-        title: "Can duyet 2 don nghi phep",
-        content: "He thong ghi nhan 2 don nghi phep dang cho duyet trong phong Ky thuat.",
-        type: NotificationType.APPROVAL,
-        isRead: false,
-        refType: "LEAVE_REQUEST",
-        refId: null,
-      },
-      {
-        userId: byCode("ADM001").id,
-        title: "Canh bao dang nhap bat thuong",
-        content: "Phat hien 3 lan dang nhap that bai lien tiep tai tai khoan EMP007.",
-        type: NotificationType.SYSTEM,
-        isRead: false,
-        refType: "SECURITY",
-        refId: "audit-security-001",
-      },
-      {
-        userId: byCode("EMP006").id,
-        title: "Thong bao lich nghi le",
-        content: "Cong ty se nghi Team Building vao ngay 15/08/2026.",
-        type: NotificationType.LEAVE,
-        isRead: true,
-        readAt: daysAgo(2),
-        refType: "HOLIDAY",
-        refId: "holiday-teambuilding-2026",
-      },
-    ],
+    data: notifications,
   });
 
   await prisma.auditLog.createMany({
@@ -798,7 +968,8 @@ async function main() {
   console.log("[seed] Start seeding data...");
 
   await clearData();
-  const users = await seedUsers();
+  const organization = await seedDepartmentsAndPositions();
+  const users = await seedUsers(organization);
   const jobs = await seedJobs(users);
   await seedUserAssignments(users, jobs);
   await seedSessionsAndDevices(users);
@@ -820,6 +991,10 @@ async function main() {
   console.log(`[seed] AuditLogs: ${await prisma.auditLog.count()}`);
   console.log(`[seed] Sessions: ${await prisma.session.count()}`);
   console.log(`[seed] UserDevices: ${await prisma.userDevice.count()}`);
+  if (prisma.department && prisma.position) {
+    console.log(`[seed] Departments: ${await prisma.department.count()}`);
+    console.log(`[seed] Positions: ${await prisma.position.count()}`);
+  }
 }
 
 main()
