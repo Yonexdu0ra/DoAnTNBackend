@@ -7,6 +7,9 @@ model Holiday {
   // ngày nghỉ lễ có phải là ngày nghỉ có lương hay không
   isPaid      Boolean     @default(false) @map("is_paid")
   type        HolidayType @map("holiday_type")
+  
+  // private holiday
+  userId      String?     @map("user_id")
   description String?     @db.Text
   createdAt   DateTime    @default(now()) @map("created_at")
   updatedAt   DateTime    @updatedAt @map("updated_at")

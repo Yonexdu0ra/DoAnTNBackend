@@ -45,6 +45,11 @@
       "source": "apollographql/skills",
       "sourceType": "github",
       "computedHash": "44def51b2bb66c2eafe75e8f29ae8ace901531b4eb47cffd1fb7cf3109631092"
+    },
+    "zod": {
+      "source": "anivar/zod-skill",
+      "sourceType": "github",
+      "computedHash": "8f746325460dba852bd07b63d3afd74af86fcf267def6dc509694882a58d91ee"
     }
   }
 }

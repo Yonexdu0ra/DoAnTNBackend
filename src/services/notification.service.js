@@ -1,110 +1,157 @@
+// ═══════════════════════════════════════════
+//  Notification Service
+// ═══════════════════════════════════════════
+
 import prisma from '../configs/prismaClient.js'
-import { buildCursorPaginationArgs, processCursorResult, buildPrismaFilter } from '../utils/pagination.js'
-import { pubsub, EVENTS } from '../configs/pubsub.js'
+import {
+    buildCursorPaginationArgs,
+    buildCursorPageInfo,
+    processCursorResult,
+    buildPrismaFilter,
+} from '../utils/pagination.js'
 
-const KEYWORD_FIELDS = ['title', 'content']
-const IN_FIELD_MAP = { typeIn: 'type' }
+// ── Filter options ──
+const NOTIFICATION_FILTER_OPTIONS = {
+    keywordFields: ['title', 'content'],
+    inFieldMap: {
+        typeIn: 'type',
+    },
+}
 
-// ── Helper: tạo notification + publish qua pubsub ──
-export const createAndPublishNotification = async ({
-    userId,
-    title,
-    content,
-    type = 'SYSTEM',
-    refType = null,
-    refId = null,
-}) => {
-    const notification = await prisma.notification.create({
-        data: { userId, title, content, type, refType, refId },
-    })
+// ── Query ──
 
-    pubsub.publish(EVENTS.NOTIFICATION_RECEIVED, {
-        userReceivedNotification: {
-            status: 'success',
-            code: 200,
-            message: 'Bạn có thông báo mới',
-            data: notification,
-        },
-        targetUserId: userId,
-    })
+/**
+ * Lấy notification theo ID – chỉ trả về nếu notification thuộc về user hiện tại.
+ *
+ * @param {string} id - notification ID
+ * @param {string} userId - user hiện tại (kiểm tra quyền sở hữu)
+ * @param {Object|null} select - Prisma select
+ * @returns {Promise<NotificationResponse>}
+ */
+const getNotificationById = async (id, userId, select) => {
+    if (!id) throw new Error('Thiếu ID thông báo')
+
+    const findArgs = { where: { id, userId } }
+    if (select) findArgs.select = select
+
+    const notification = await prisma.notification.findFirst(findArgs)
+
+    if (!notification) {
+        throw new Error('Không tìm thấy thông báo hoặc bạn không có quyền xem')
+    }
 
     return notification
 }
 
-// ── Query: lấy danh sách thông báo (cursor-based) ──
+/**
+ * Lấy danh sách notification của user (cursor-based pagination).
+ *
+ * @param {string} userId - user hiện tại
+ * @param {Object|null} pagination - { cursor, limit }
+ * @param {Object|null} orderBy - { field, order }
+ * @param {Object|null} filter - NotificationFilterInput
+ * @param {Object|null} select - Prisma select
+ * @returns {Promise<NotificationCursorListResponse>}
+ */
 const getNotifications = async (userId, pagination, orderBy, filter, select) => {
-    const filterWhere = buildPrismaFilter(filter, {
-        keywordFields: KEYWORD_FIELDS,
-        inFieldMap: IN_FIELD_MAP,
-    })
+    // Build filter → Prisma where
+    const filterWhere = buildPrismaFilter(filter, NOTIFICATION_FILTER_OPTIONS)
 
-    const limit = pagination?.limit || 10
-    const args = buildCursorPaginationArgs(pagination, orderBy, null, {
-        userId,
-        ...filterWhere,
-    })
+    // Luôn scope theo userId hiện tại
+    const extraWhere = { ...filterWhere, userId }
 
-    const items = await prisma.notification.findMany({
-        ...args,
-        ...(select ? { select } : {}),
-    })
-    const { data, nextCursor } = processCursorResult(items, limit)
+    // Build Prisma findMany args (cursor-based)
+    const findArgs = buildCursorPaginationArgs(pagination, orderBy, select, extraWhere)
+
+    const items = await prisma.notification.findMany(findArgs)
+
+    // Xử lý cursor result
+    const limit = pagination?.limit
+    const { data, nextCursor } = processCursorResult(items ?? [], limit)
+    const pageInfo = buildCursorPageInfo(limit, nextCursor)
 
     return {
-        status: 'success',
-        code: 200,
-        message: 'Lấy danh sách thông báo thành công',
-        data,
-        pagination: {
-            limit,
-            nextCursor,
-            hasNextPage: !!nextCursor,
-        },
+        nodes: data,
+        pageInfo: pageInfo,
     }
 }
 
-// ── Mutation: đánh dấu đã đọc 1 thông báo ──
+// ── Mutation ──
+
+/**
+ * Đánh dấu một notification là đã đọc.
+ *
+ * @param {string} userId - user hiện tại
+ * @param {Object} input - { notificationId: string }
+ * @returns {Promise<NotificationResponse>}
+ */
 const markAsRead = async (userId, input) => {
+    const { notificationId } = input || {}
+
+    if (!notificationId) throw new Error('Thiếu ID thông báo')
+
+    // Kiểm tra notification tồn tại & thuộc về user
     const notification = await prisma.notification.findFirst({
-        where: { id: input.notificationId, userId },
-    })
-    if (!notification) throw new Error('Thông báo không tồn tại')
-
-    const updated = await prisma.notification.update({
-        where: { id: notification.id },
-        data: { isRead: true, readAt: new Date() },
+        where: { id: notificationId, userId },
     })
 
-    return {
-        status: 'success',
-        code: 200,
-        message: 'Đánh dấu đã đọc thành công',
-        data: updated,
+    if (!notification) {
+        throw new Error('Không tìm thấy thông báo hoặc bạn không có quyền')
     }
+
+    // Nếu đã đọc rồi → trả về luôn
+    if (notification.isRead) {
+        return notification
+    }
+
+    // Cập nhật trạng thái đã đọc
+    const updated = await prisma.notification.update({
+        where: { id: notificationId },
+        data: {
+            isRead: true,
+            readAt: new Date(),
+        },
+    })
+
+    return updated
 }
 
-// ── Mutation: đánh dấu tất cả đã đọc ──
+/**
+ * Đánh dấu tất cả (hoặc danh sách) notification là đã đọc.
+ *
+ * @param {string} userId - user hiện tại
+ * @param {Object|null} input - { notificationIds?: string[] }
+ *   - Nếu truyền notificationIds → chỉ đánh dấu các notification đó
+ *   - Nếu không truyền → đánh dấu tất cả notification chưa đọc
+ * @returns {Promise<BaseResponse>}
+ */
 const markAllAsRead = async (userId, input) => {
-    const where = { userId, isRead: false }
-    if (input?.notificationIds?.length > 0) {
-        where.id = { in: input.notificationIds }
+    const { notificationIds } = input || {}
+
+    const where = {
+        userId,
+        isRead: false,
     }
 
-    await prisma.notification.updateMany({
+    // Nếu có danh sách ID → chỉ update các notification đó
+    if (Array.isArray(notificationIds) && notificationIds.length > 0) {
+        where.id = { in: notificationIds }
+    }
+
+    const result = await prisma.notification.updateMany({
         where,
-        data: { isRead: true, readAt: new Date() },
+        data: {
+            isRead: true,
+            readAt: new Date(),
+        },
     })
 
-    return {
-        status: 'success',
-        code: 200,
-        message: 'Đánh dấu tất cả đã đọc thành công',
-    }
+    return true
 }
 
 export default {
+    getNotificationById,
     getNotifications,
     markAsRead,
     markAllAsRead,
-    createAndPublishNotification,
 }

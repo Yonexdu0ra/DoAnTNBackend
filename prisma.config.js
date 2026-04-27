@@ -2,7 +2,13 @@
 // npm install --save-dev prisma dotenv
 import "dotenv/config";
 import { defineConfig } from "prisma/config";
+import { fileURLToPath } from 'url'
+import fs from 'fs'
+import path from 'path'
+const __filename = fileURLToPath(import.meta.url)
+const __dirname = path.dirname(__filename)
 
+const certPath = path.join(__dirname, 'src/ssl/certificate.pem')
 export default defineConfig({
   schema: "prisma",
   migrations: {
@@ -10,6 +16,7 @@ export default defineConfig({
     seed: "node prisma/seed.js",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // url: `${process.env["AIVEN_DATABASE_SERVICE_URI"]}&sslrootcert=${certPath}`,
+    url: process.env["/DATABASE_URL"],
   },
 });

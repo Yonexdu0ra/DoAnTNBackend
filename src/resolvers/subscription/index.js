@@ -1,230 +1,252 @@
 import { pubsub, EVENTS } from '../../configs/pubsub.js'
-import prisma from '../../configs/prismaClient.js'
-import { nanoid } from 'nanoid'
 import { ensureAuthorized, ROLE_ACCESS } from '../../utils/authroziredRole.js'
 import { encryptAES } from '../../utils/aes.js'
+import prisma from '../../configs/prismaClient.js'
 
-const DEFAULT_QR_ROTATE_SECONDS = 5
-const DEFAULT_QR_EXPIRE_SECONDS = 10
-const qrTickerByJob = new Map()
+const QR_ROTATE_INTERVAL_MS = Number(process.env.QR_ROTATE_INTERVAL_MS || 5000)
+const QR_EXPIRE_AFTER_MS = Number(process.env.QR_EXPIRE_AFTER_MS || 10000)
+const qrTickerMap = new Map()
+const qrSubscriberCountMap = new Map()
 
-const toPositiveInt = (value, fallback) => {
-    const parsed = Number(value)
-    if (!Number.isFinite(parsed) || parsed <= 0) return fallback
-    return Math.floor(parsed)
-}
+const getQRScanType = (job, now) => {
+  if (!job) return 'UNKNOWN'
 
-const QR_ROTATE_SECONDS = toPositiveInt(
-    process.env.ATTENDANCE_QR_ROTATE_SECONDS,
-    DEFAULT_QR_ROTATE_SECONDS,
-)
-const QR_EXPIRE_SECONDS = toPositiveInt(
-    process.env.ATTENDANCE_QR_EXPIRE_SECONDS,
-    DEFAULT_QR_EXPIRE_SECONDS,
-)
-const QR_TYPE = 'ATTENDANCE_JOB'
+  const nowMinutes = now.getHours() * 60 + now.getMinutes()
 
-const buildAttendanceQrResponse = (jobId) => {
-    const now = Date.now()
-    const expireAtMs = now + QR_EXPIRE_SECONDS * 1000
-    const timeBase = now + QR_ROTATE_SECONDS * 1000 // Thời điểm mã QR hiện tại sẽ hết hạn và cần thay bằng mã mới (client có thể dùng timeBase để biết khi nào cần refresh QR mới)
+  const workStart = new Date(job.workStartTime)
+  const startMinutes = workStart.getHours() * 60 + workStart.getMinutes()
 
-    // qrCodeData trả về string payload để client hiển thị thành QR image.
-    const qrPayload = {
-        type: QR_TYPE,
-        jobId,
-        nonce: nanoid(24),
-        iat: new Date(now).toISOString(),
-        exp: new Date(expireAtMs).toISOString(),
+  const workEnd = new Date(job.workEndTime)
+  const endMinutes = workEnd.getHours() * 60 + workEnd.getMinutes()
+
+  let adjustedNow = nowMinutes
+  let adjustedEnd = endMinutes
+  if (endMinutes < startMinutes) {
+    adjustedEnd += 24 * 60
+    if (nowMinutes < startMinutes) {
+      adjustedNow += 24 * 60
     }
-    const encryptedQrPayload = encryptAES(JSON.stringify(qrPayload))
-    return {
-        status: 'success',
-        code: 200,
-        expireAt: new Date(expireAtMs),
-        timeBase,
-        qrCodeData: encryptedQrPayload,
-        type: QR_TYPE,
+  }
+
+  const earlyCheckIn = job.earlyCheckInMinutes || 60
+  const lateCheckOut = job.lateCheckOutMinutes || 60
+
+  const startWindow = startMinutes - earlyCheckIn
+  const endWindow = adjustedEnd + lateCheckOut
+
+  if (adjustedNow < startWindow || adjustedNow > endWindow) {
+    return 'UNKNOWN'
+  }
+
+  const midpoint = startMinutes + (adjustedEnd - startMinutes) / 2
+
+  if (adjustedNow <= midpoint) {
+    return 'CHECKIN'
+  } else {
+    return 'CHECKOUT'
+  }
+}
+
+const buildQRCodePayload = async (jobId) => {
+  const now = new Date()
+  const job = await prisma.job.findUnique({ where: { id: jobId } })
+  const type = getQRScanType(job, now)
+
+  const timeBase = new Date(now.getTime() + QR_ROTATE_INTERVAL_MS)
+  const expireAt = new Date(now.getTime() + QR_EXPIRE_AFTER_MS)
+  const qrCodeData = encryptAES(JSON.stringify({
+    jobId,
+    timeBase: timeBase.toISOString(),
+    expireAt: expireAt.toISOString(),
+    type,
+  }))
+
+  return {
+    expireAt,
+    timeBase,
+    qrCodeData,
+    type,
+  }
+}
+
+const publishQRCodeUpdate = async (jobId) => {
+  const payload = await buildQRCodePayload(jobId)
+  pubsub.publish(EVENTS.ATTENDANCE_QR_CODE_BY_JOB(jobId), {
+    managerReceivedAttendanceQRCodeJob: payload,
+  })
+}
+
+const increaseQRSubscriber = (jobId) => {
+  const count = qrSubscriberCountMap.get(jobId) || 0
+  qrSubscriberCountMap.set(jobId, count + 1)
+}
+
+const decreaseQRSubscriber = (jobId) => {
+  const count = qrSubscriberCountMap.get(jobId) || 0
+  if (count <= 1) {
+    qrSubscriberCountMap.delete(jobId)
+    const timer = qrTickerMap.get(jobId)
+    if (timer) {
+      clearInterval(timer)
+      qrTickerMap.delete(jobId)
     }
+    return
+  }
+
+  qrSubscriberCountMap.set(jobId, count - 1)
 }
 
-const publishAttendanceQrByJob = async (jobId) => {
-    await pubsub.publish(EVENTS.ATTENDANCE_QR_CODE_BY_JOB(jobId), {
-        managerReceivedAttendanceQRCodeJob: buildAttendanceQrResponse(jobId),
-    })
+const startQRTicker = (jobId) => {
+  if (qrTickerMap.has(jobId)) return
+
+  const timer = setInterval(() => {
+    publishQRCodeUpdate(jobId)
+  }, QR_ROTATE_INTERVAL_MS)
+
+  qrTickerMap.set(jobId, timer)
 }
 
-const retainAttendanceQrTicker = (jobId) => {
-    const existing = qrTickerByJob.get(jobId)
-    if (existing) {
-        existing.refCount += 1
-        return
+const withUnsubscribeCleanup = (iterator, onCleanup) => {
+  const originalReturn = iterator.return?.bind(iterator)
+  const originalThrow = iterator.throw?.bind(iterator)
+
+  iterator.return = async (...args) => {
+    onCleanup()
+    if (originalReturn) {
+      return originalReturn(...args)
     }
+    return { value: undefined, done: true }
+  }
 
-    const intervalId = setInterval(() => {
-        publishAttendanceQrByJob(jobId).catch((err) => {
-            console.error('[subscription][managerReceivedAttendanceQRCodeJob] publish error:', err)
-        })
-    }, QR_ROTATE_SECONDS * 1000)
-
-    qrTickerByJob.set(jobId, { intervalId, refCount: 1 })
-
-    // Bắn ngay 1 mã QR khi client vừa subscribe.
-    publishAttendanceQrByJob(jobId).catch((err) => {
-        console.error('[subscription][managerReceivedAttendanceQRCodeJob] initial publish error:', err)
-    })
-}
-
-const releaseAttendanceQrTicker = (jobId) => {
-    const existing = qrTickerByJob.get(jobId)
-    if (!existing) return
-
-    existing.refCount -= 1
-    if (existing.refCount <= 0) {
-        clearInterval(existing.intervalId)
-        qrTickerByJob.delete(jobId)
+  iterator.throw = async (...args) => {
+    onCleanup()
+    if (originalThrow) {
+      return originalThrow(...args)
     }
+    throw args[0]
+  }
+
+  return iterator
 }
+
+// ═══════════════════════════════════════════
+//  SUBSCRIPTION CHUNG (common – tất cả role)
+// ═══════════════════════════════════════════
+
+const userReceivedNotification = {
+  subscribe: (_, __, context) => {
+    ensureAuthorized(context, ROLE_ACCESS.common, 'userReceivedNotification')
+    const userId = context.user.id
+    return pubsub.asyncIterator([`${EVENTS.NOTIFICATION_RECEIVED}:${userId}`])
+  },
+}
+
+// ═══════════════════════════════════════════
+//  SUBSCRIPTION DÀNH CHO EMPLOYEE
+// ═══════════════════════════════════════════
+
+const employeeReceivedLeaveRequestStatus = {
+  subscribe: (_, __, context) => {
+    ensureAuthorized(context, ROLE_ACCESS.common, 'employeeReceivedLeaveRequestStatus')
+    const userId = context.user.id
+    return pubsub.asyncIterator([EVENTS.EMPLOYEE_LEAVE_STATUS(userId)])
+  },
+}
+
+const employeeReceivedOvertimeRequestStatus = {
+  subscribe: (_, __, context) => {
+    ensureAuthorized(context, ROLE_ACCESS.common, 'employeeReceivedOvertimeRequestStatus')
+    const userId = context.user.id
+    return pubsub.asyncIterator([EVENTS.EMPLOYEE_OVERTIME_STATUS(userId)])
+  },
+}
+
+const employeeReceivedAttendanceStatus = {
+  subscribe: (_, __, context) => {
+    ensureAuthorized(context, ROLE_ACCESS.common, 'employeeReceivedAttendanceStatus')
+    const userId = context.user.id
+    return pubsub.asyncIterator([EVENTS.EMPLOYEE_ATTENDANCE_STATUS(userId)])
+  },
+}
+
+// ═══════════════════════════════════════════
+//  SUBSCRIPTION DÀNH CHO MANAGER
+// ═══════════════════════════════════════════
+
+const managerReceivedLeaveRequest = {
+  subscribe: (_, { jobId }, context) => {
+    ensureAuthorized(context, ROLE_ACCESS.managerAdmin, 'managerReceivedLeaveRequest')
+    return pubsub.asyncIterator([EVENTS.NEW_LEAVE_REQUEST_BY_JOB(jobId)])
+  },
+}
+
+const managerReceivedOvertimeRequest = {
+  subscribe: (_, { jobId }, context) => {
+    ensureAuthorized(context, ROLE_ACCESS.managerAdmin, 'managerReceivedOvertimeRequest')
+    return pubsub.asyncIterator([EVENTS.NEW_OVERTIME_REQUEST_BY_JOB(jobId)])
+  },
+}
+
+const managerReceivedAttendance = {
+  subscribe: (_, { jobId }, context) => {
+    ensureAuthorized(context, ROLE_ACCESS.managerAdmin, 'managerReceivedAttendance')
+    return pubsub.asyncIterator([EVENTS.NEW_ATTENDANCE_BY_JOB(jobId)])
+  },
+}
+
+const managerReceivedUserJoinedJob = {
+  subscribe: (_, { jobId }, context) => {
+    ensureAuthorized(context, ROLE_ACCESS.managerAdmin, 'managerReceivedUserJoinedJob')
+    return pubsub.asyncIterator([EVENTS.EMPLOYEE_IN_JOB_UPDATED(jobId)])
+  },
+}
+
+const managerReceivedAttendanceQRCodeJob = {
+  subscribe: (_, { jobId }, context) => {
+    ensureAuthorized(context, ROLE_ACCESS.managerAdmin, 'managerReceivedAttendanceQRCodeJob')
+
+    const sharedChannel = EVENTS.ATTENDANCE_QR_CODE_BY_JOB(jobId)
+    const iterator = withUnsubscribeCleanup(
+      pubsub.asyncIterator([sharedChannel]),
+      () => {
+        decreaseQRSubscriber(jobId)
+      },
+    )
+
+    increaseQRSubscriber(jobId)
+    startQRTicker(jobId)
+
+    return (async function* immediateFirstQRCode() {
+      // Trả QR đầu tiên trực tiếp để client nhận ngay khi subscribe thành công.
+      const firstPayload = await buildQRCodePayload(jobId)
+      yield {
+        managerReceivedAttendanceQRCodeJob: firstPayload,
+      }
+
+      for await (const payload of iterator) {
+        yield payload
+      }
+    })()
+  },
+}
+
+// ═══════════════════════════════════════════
 
 const subscriptionResolvers = {
-    // ═══════════════════════════════════
-    // COMMON
-    // ═══════════════════════════════════
+  // common
+  userReceivedNotification,
 
-    userReceivedNotification: {
-        subscribe: (_, __, context) => {
-            const userId = context.user?.id
-            if (!userId) throw new Error('Unauthorized')
+  // employee
+  employeeReceivedLeaveRequestStatus,
+  employeeReceivedOvertimeRequestStatus,
+  employeeReceivedAttendanceStatus,
 
-            // Trả về async iterator, filter bằng targetUserId trong payload
-            const iterator = pubsub.asyncIterator(EVENTS.NOTIFICATION_RECEIVED)
-
-            // Wrap iterator để filter theo userId
-            return {
-                [Symbol.asyncIterator]() {
-                    return {
-                        async next() {
-                            while (true) {
-                                const result = await iterator.next()
-                                if (result.done) return result
-                                if (result.value?.targetUserId === userId) {
-                                    return result
-                                }
-                            }
-                        },
-                        return() {
-                            return iterator.return()
-                        },
-                        throw(err) {
-                            return iterator.throw(err)
-                        },
-                    }
-                },
-            }
-        },
-    },
-
-    // ═══════════════════════════════════
-    // EMPLOYEE SUBSCRIPTIONS
-    // ═══════════════════════════════════
-
-    employeeReceivedLeaveRequestStatus: {
-        subscribe: (_, __, context) => {
-            const userId = context.user?.id
-            if (!userId) throw new Error('Unauthorized')
-            return pubsub.asyncIterator(EVENTS.EMPLOYEE_LEAVE_STATUS(userId))
-        },
-    },
-
-    employeeReceivedOvertimeRequestStatus: {
-        subscribe: (_, __, context) => {
-            const userId = context.user?.id
-            if (!userId) throw new Error('Unauthorized')
-            return pubsub.asyncIterator(EVENTS.EMPLOYEE_OVERTIME_STATUS(userId))
-        },
-    },
-
-    employeeReceivedAttendanceStatus: {
-        subscribe: (_, __, context) => {
-            const userId = context.user?.id
-            if (!userId) throw new Error('Unauthorized')
-            return pubsub.asyncIterator(EVENTS.EMPLOYEE_ATTENDANCE_STATUS(userId))
-        },
-    },
-
-    // ═══════════════════════════════════
-    // MANAGER SUBSCRIPTIONS
-    // ═══════════════════════════════════
-
-    managerReceivedLeaveRequest: {
-        subscribe: (_, { jobId }, context) => {
-            if (!context.user?.id) throw new Error('Unauthorized')
-            return pubsub.asyncIterator(EVENTS.NEW_LEAVE_REQUEST_BY_JOB(jobId))
-        },
-    },
-
-    managerReceivedOvertimeRequest: {
-        subscribe: (_, { jobId }, context) => {
-            if (!context.user?.id) throw new Error('Unauthorized')
-            return pubsub.asyncIterator(EVENTS.NEW_OVERTIME_REQUEST_BY_JOB(jobId))
-        },
-    },
-
-    managerReceivedAttendance: {
-        subscribe: (_, { jobId }, context) => {
-            if (!context.user?.id) throw new Error('Unauthorized')
-            return pubsub.asyncIterator(EVENTS.NEW_ATTENDANCE_BY_JOB(jobId))
-        },
-    },
-
-    managerReceivedUserJoinedJob: {
-        subscribe: (_, { jobId }, context) => {
-            if (!context.user?.id) throw new Error('Unauthorized')
-            return pubsub.asyncIterator(EVENTS.EMPLOYEE_IN_JOB_UPDATED(jobId))
-        },
-    },
-
-    managerReceivedAttendanceQRCodeJob: {
-        subscribe: async (_, { jobId }, context) => {
-            const userId = context.user?.id
-            if (!userId) throw new Error('Unauthorized')
-
-            ensureAuthorized(context, ROLE_ACCESS.managerAdmin, 'managerReceivedAttendanceQRCodeJob')
-            const isAdmin = context.user.role.includes(ROLE_ACCESS.admin)
-            const managerInJob = await prisma.jobManager.findFirst({
-                where: {
-                    jobId,
-                    userId,
-                },
-                select: { id: true },
-            })
-
-            if (!managerInJob && !isAdmin) {
-                throw new Error('Bạn không có quyền nhận QR code của công việc này')
-            }
-
-            retainAttendanceQrTicker(jobId)
-            const iterator = pubsub.asyncIterator(EVENTS.ATTENDANCE_QR_CODE_BY_JOB(jobId))
-
-            return {
-                [Symbol.asyncIterator]() {
-                    return {
-                        next() {
-                            return iterator.next()
-                        },
-                        return() {
-                            releaseAttendanceQrTicker(jobId)
-                            return iterator.return()
-                        },
-                        throw(error) {
-                            releaseAttendanceQrTicker(jobId)
-                            return iterator.throw(error)
-                        },
-                    }
-                },
-            }
-        },
-    },
+  // manager
+  managerReceivedLeaveRequest,
+  managerReceivedOvertimeRequest,
+  managerReceivedAttendance,
+  managerReceivedUserJoinedJob,
+  managerReceivedAttendanceQRCodeJob,
 }
 
 export default subscriptionResolvers

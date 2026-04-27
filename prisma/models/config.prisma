@@ -1,0 +1,10 @@
+model Config {
+    id        String   @id @default(uuid(7))
+    key       String   @unique
+    value     Json
+    description String 
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+
+    @@index([key], name: "idx_key")
+}

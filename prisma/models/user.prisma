@@ -12,6 +12,7 @@ model User {
   deletedAt        DateTime? @map("deleted_at")
   departmentId String? @map("department_id")
   positionId   String? @map("position_id")
+  isLocked    Boolean  @default(false) @map("is_locked")
   // time stamps
   createdAt DateTime     @default(now()) @map("created_at")
   updatedAt DateTime     @updatedAt @map("updated_at")

@@ -1,213 +1,275 @@
+// ═══════════════════════════════════════════════════════════════
+//  Pagination & Filter utilities dùng chung cho tất cả queries
+// ═══════════════════════════════════════════════════════════════
+
+const DEFAULT_PAGE = 1
+const DEFAULT_LIMIT = 10
+const MAX_LIMIT = 200
+
+// ───────────────────────────────────────────
+//  Helpers
+// ───────────────────────────────────────────
+
 /**
- * Build Prisma orderBy từ GraphQL orderByInput
+ * Clamp limit trong khoảng [1, MAX_LIMIT], mặc định DEFAULT_LIMIT
  */
-export const buildOrderBy = (orderBy) => {
-    if (!orderBy || !orderBy.field) return { createdAt: 'desc' }
-    const direction = (orderBy.order || 'DESC').toLowerCase()
-    return { [orderBy.field]: direction }
+const clampLimit = (limit) => {
+    if (!limit || typeof limit !== 'number' || limit < 1) return DEFAULT_LIMIT
+    return Math.min(limit, MAX_LIMIT)
 }
 
 /**
- * Build Prisma where clause từ GraphQL searchInput
- * Hỗ trợ search trên các trường string
+ * Clamp page >= 1, mặc định DEFAULT_PAGE
  */
-export const buildSearchFilter = (search) => {
-    if (!search || !search.field || !search.value) return {}
-    return {
-        [search.field]: {
-            contains: search.value,
-            mode: 'insensitive',
-        }
-    }
+const clampPage = (page) => {
+    if (!page || typeof page !== 'number' || page < 1) return DEFAULT_PAGE
+    return Math.floor(page)
 }
 
 /**
- * Build Prisma filter clause từ GraphQL filterInput
+ * Build Prisma orderBy từ SortOrderInput { field, order }
+ * @param {Object|null} orderByInput - { field: string, order: 'ASC'|'DESC' }
+ * @param {string} defaultField - field mặc định nếu không truyền
+ * @param {string} defaultOrder - order mặc định nếu không truyền
+ * @returns {Object} Prisma orderBy object
  */
-export const buildFilterWhere = (filter) => {
-    if (!filter || !filter.field || !filter.value) return {}
+const buildOrderBy = (orderByInput, defaultField = 'createdAt', defaultOrder = 'desc') => {
+    const field = orderByInput?.field || defaultField
+    const order = (orderByInput?.order || defaultOrder).toLowerCase()
 
-    const operatorMap = {
-        eq: 'equals',
-        ne: 'not',
-        contains: 'contains',
-        gt: 'gt',
-        gte: 'gte',
-        lt: 'lt',
-        lte: 'lte',
+    // Hỗ trợ nested field: VD 'profile.fullName' → { profile: { fullName: order } }
+    const parts = field.split('.')
+    if (parts.length === 1) {
+        return { [field]: order }
     }
 
-    const prismaOp = operatorMap[filter.operator] || 'equals'
-    return {
-        [filter.field]: { [prismaOp]: filter.value }
+    // xử lý nested như 'profile.fullName' → { profile: { fullName: 'desc' } }
+    let result = { [parts[parts.length - 1]]: order }
+    for (let i = parts.length - 2; i >= 0; i--) {
+        result = { [parts[i]]: result }
     }
+    return result
 }
 
+// ───────────────────────────────────────────
+//  Page-based pagination (offset)
+// ───────────────────────────────────────────
+
 /**
- * Build phân trang (page-based) args cho Prisma
- * Trả về: { skip, take, orderBy, where }
+ * Tạo Prisma findMany args cho page-based pagination.
+ *
+ * @param {Object|null} pagination - { page?: number, limit?: number }
+ * @param {Object|null} orderByInput - { field?: string, order?: 'ASC'|'DESC' }
+ * @param {Object|null} select - Prisma select object (nếu có)
+ * @param {Object} extraWhere - điều kiện where bổ sung
+ * @returns {{ skip: number, take: number, orderBy: Object, where: Object, select?: Object }}
  */
-export const buildPagePaginationArgs = (pagination, orderBy, search, additionalWhere = {}) => {
-    const page = pagination?.page || 1
-    const limit = pagination?.limit || 10
+export const buildPagePaginationArgs = (pagination, orderByInput, select, extraWhere = {}) => {
+    const page = clampPage(pagination?.page)
+    const limit = clampLimit(pagination?.limit)
     const skip = (page - 1) * limit
 
-    const searchWhere = buildSearchFilter(search)
-
-    return {
+    const args = {
         skip,
         take: limit,
-        orderBy: buildOrderBy(orderBy),
-        where: {
-            ...additionalWhere,
-            ...searchWhere,
-        },
-    }
-}
-
-/**
- * Build phân trang (cursor-based) args cho Prisma
- * Trả về: { take, cursor, skip, orderBy, where }
- */
-export const buildCursorPaginationArgs = (pagination, orderBy, search, additionalWhere = {}) => {
-    const limit = pagination?.limit || 10
-    const cursor = pagination?.cursor || null
-
-    const searchWhere = buildSearchFilter(search)
-
-    const args = {
-        take: limit + 1, // Lấy thêm 1 để biết còn dữ liệu không
-        orderBy: buildOrderBy(orderBy),
-        where: {
-            ...additionalWhere,
-            ...searchWhere,
-        },
+        orderBy: buildOrderBy(orderByInput),
+        where: { ...extraWhere },
     }
 
-    if (cursor) {
-        args.cursor = { id: cursor }
-        args.skip = 1 // Skip cursor item
+    if (select) {
+        args.select = select
     }
 
     return args
 }
 
 /**
- * Process kết quả cursor-based pagination
- * Trả về: { data, nextCursor }
+ * Tạo PageInfo response chuẩn cho page-based pagination.
+ *
+ * @param {Object|null} pagination - { page?: number, limit?: number }
+ * @param {number} total - tổng số record
+ * @returns {{ page: number, limit: number, total: number, totalPages: number, hasNextPage: boolean, hasPrevPage: boolean }}
+ */
+export const buildPageInfo = (pagination, total) => {
+    const page = clampPage(pagination?.page)
+    const limit = clampLimit(pagination?.limit)
+    const totalPages = Math.ceil(total / limit)
+
+    return {
+        page,
+        limit,
+        total,
+        totalPages,
+        hasNextPage: page < totalPages,
+        hasPrevPage: page > 1,
+    }
+}
+
+// ───────────────────────────────────────────
+//  Cursor-based pagination
+// ───────────────────────────────────────────
+
+/**
+ * Tạo Prisma findMany args cho cursor-based pagination.
+ *
+ * @param {Object|null} pagination - { cursor?: string, limit?: number }
+ * @param {Object|null} orderByInput - { field?: string, order?: 'ASC'|'DESC' }
+ * @param {Object|null} select - Prisma select object (nếu có)
+ * @param {Object} extraWhere - điều kiện where bổ sung
+ * @returns {{ take: number, cursor?: Object, skip?: number, orderBy: Object, where: Object, select?: Object }}
+ */
+export const buildCursorPaginationArgs = (pagination, orderByInput, select, extraWhere = {}) => {
+    const limit = clampLimit(pagination?.limit)
+
+    const args = {
+        take: limit + 1, // lấy thêm 1 phần tử để kiểm tra hasNextPage
+        orderBy: buildOrderBy(orderByInput),
+        where: { ...extraWhere },
+    }
+
+    if (pagination?.cursor) {
+        args.cursor = { id: pagination.cursor }
+        args.skip = 1 // bỏ qua cursor hiện tại
+    }
+
+    if (select) {
+        args.select = select
+    }
+
+    return args
+}
+
+/**
+ * Xử lý kết quả cursor-based pagination:
+ * - Cắt bớt phần tử thừa (phần tử thứ limit + 1)
+ * - Trả về nextCursor nếu còn dữ liệu
+ *
+ * @param {Array} items - danh sách items từ Prisma findMany
+ * @param {number} limit - số lượng items yêu cầu
+ * @returns {{ data: Array, nextCursor: string|null }}
  */
 export const processCursorResult = (items, limit) => {
-    const hasMore = items.length > limit
-    const data = hasMore ? items.slice(0, limit) : items
-    const nextCursor = hasMore ? data[data.length - 1]?.id : null
+    const safeLimit = clampLimit(limit)
+    const hasMore = items.length > safeLimit
+    const data = hasMore ? items.slice(0, safeLimit) : items
+    const nextCursor = hasMore && data.length > 0 ? data[data.length - 1].id : null
 
     return { data, nextCursor }
 }
 
 /**
- * Convert primitive filter (StringFilterInput, IDFilterInput, DateFilterInput, etc.) to Prisma where
+ * Tạo CursorPageInfo response chuẩn.
+ *
+ * @param {number} limit - số items trên mỗi page
+ * @param {string|null} nextCursor - cursor tiếp theo
+ * @returns {{ limit: number, nextCursor: string|null, hasNextPage: boolean }}
  */
-const buildPrimitiveFilter = (filterInput) => {
+export const buildCursorPageInfo = (limit, nextCursor) => ({
+    limit: clampLimit(limit),
+    nextCursor,
+    hasNextPage: !!nextCursor,
+})
+
+// ───────────────────────────────────────────
+//  Prisma filter builder
+// ───────────────────────────────────────────
+
+/**
+ * Map một primitive filter input (StringFilterInput, IDFilterInput, ...) sang Prisma where.
+ * @param {Object} filterInput - ví dụ { eq: 'hello', contains: 'world', in: ['a','b'] }
+ * @returns {Object} Prisma where condition cho 1 field
+ */
+const mapPrimitiveFilter = (filterInput) => {
     if (!filterInput || typeof filterInput !== 'object') return undefined
 
-    const prismaFilter = {}
+    const prismaCondition = {}
 
-    for (const [op, val] of Object.entries(filterInput)) {
-        if (val === undefined || val === null) continue
+    // String / ID / general
+    if (filterInput.eq !== undefined) prismaCondition.equals = filterInput.eq
+    if (filterInput.contains !== undefined) prismaCondition.contains = filterInput.contains
+    if (filterInput.startsWith !== undefined) prismaCondition.startsWith = filterInput.startsWith
+    if (filterInput.endsWith !== undefined) prismaCondition.endsWith = filterInput.endsWith
+    if (filterInput.in !== undefined) prismaCondition.in = filterInput.in
+    if (filterInput.notIn !== undefined) prismaCondition.notIn = filterInput.notIn
 
-        switch (op) {
-            case 'eq':
-                prismaFilter.equals = val
-                break
-            case 'contains':
-                prismaFilter.contains = val
-                prismaFilter.mode = 'insensitive'
-                break
-            case 'startsWith':
-                prismaFilter.startsWith = val
-                prismaFilter.mode = 'insensitive'
-                break
-            case 'endsWith':
-                prismaFilter.endsWith = val
-                prismaFilter.mode = 'insensitive'
-                break
-            case 'in':
-                prismaFilter.in = val
-                break
-            case 'notIn':
-                prismaFilter.notIn = val
-                break
-            case 'gt':
-                prismaFilter.gt = val
-                break
-            case 'gte':
-                prismaFilter.gte = val
-                break
-            case 'lt':
-                prismaFilter.lt = val
-                break
-            case 'lte':
-                prismaFilter.lte = val
-                break
-            case 'between':
-                if (Array.isArray(val) && val.length === 2) {
-                    prismaFilter.gte = val[0]
-                    prismaFilter.lte = val[1]
-                }
-                break
-        }
+    // Int / Float / Date comparisons
+    if (filterInput.gt !== undefined) prismaCondition.gt = filterInput.gt
+    if (filterInput.gte !== undefined) prismaCondition.gte = filterInput.gte
+    if (filterInput.lt !== undefined) prismaCondition.lt = filterInput.lt
+    if (filterInput.lte !== undefined) prismaCondition.lte = filterInput.lte
+
+    // Date between
+    if (Array.isArray(filterInput.between) && filterInput.between.length === 2) {
+        prismaCondition.gte = filterInput.between[0]
+        prismaCondition.lte = filterInput.between[1]
     }
 
-    return Object.keys(prismaFilter).length > 0 ? prismaFilter : undefined
+    // String mode: case-insensitive (áp dụng nếu có contains/startsWith/endsWith)
+    if (filterInput.contains || filterInput.startsWith || filterInput.endsWith) {
+        prismaCondition.mode = 'insensitive'
+    }
+
+    return Object.keys(prismaCondition).length > 0 ? prismaCondition : undefined
 }
 
 /**
- * Build Prisma where clause từ GraphQL FilterInput
- * @param {Object} filter - GraphQL filter input (e.g. UserFilterInput, JobFilterInput)
+ * Build Prisma where clause từ GraphQL FilterInput.
+ *
+ * Hỗ trợ:
+ * - Các trường primitive filter (StringFilterInput, IDFilterInput, DateFilterInput, ...)
+ * - `keyword` field → tìm kiếm OR across nhiều field (insensitive contains)
+ * - `inFieldMap` → map tên field GraphQL sang tên field Prisma (ví dụ: roleIn → role, statusIn → status)
+ *
+ * @param {Object|null} filter - GraphQL filter input
  * @param {Object} options
- * @param {string[]} options.keywordFields - Các trường để search khi keyword được cung cấp (hỗ trợ nested: 'profile.fullName')
- * @param {Object} options.inFieldMap - Map tên field *In sang tên field Prisma { roleIn: 'role', statusIn: 'status' }
+ * @param {string[]} options.keywordFields - danh sách field Prisma để tìm keyword (OR)
+ * @param {Object} options.inFieldMap - map { graphqlFieldName: prismaFieldName } cho enum "In" fields
+ * @returns {Object} Prisma where clause
  */
 export const buildPrismaFilter = (filter, options = {}) => {
-    if (!filter) return {}
+    if (!filter || typeof filter !== 'object') return {}
 
-    const where = {}
     const { keywordFields = [], inFieldMap = {} } = options
+    const where = {}
 
     for (const [key, value] of Object.entries(filter)) {
         if (value === undefined || value === null) continue
 
-        // Xử lý keyword search
+        // keyword → OR search across multiple fields
         if (key === 'keyword') {
-            if (value && keywordFields.length > 0) {
+            if (typeof value === 'string' && value.trim().length > 0 && keywordFields.length > 0) {
+                const keyword = value.trim()
                 where.OR = keywordFields.map((field) => {
+                    // hỗ trợ nested field: 'profile.fullName'
                     const parts = field.split('.')
                     if (parts.length === 1) {
-                        return { [field]: { contains: value, mode: 'insensitive' } }
+                        return { [field]: { contains: keyword, mode: 'insensitive' } }
                     }
-                    // Build nested where: { profile: { fullName: { contains: 'x' } } }
-                    let nested = { contains: value, mode: 'insensitive' }
-                    for (let i = parts.length - 1; i >= 0; i--) {
-                        nested = { [parts[i]]: nested }
+                    // nested: { profile: { fullName: { contains: keyword, mode: 'insensitive' } } }
+                    let result = { [parts[parts.length - 1]]: { contains: keyword, mode: 'insensitive' } }
+                    for (let i = parts.length - 2; i >= 0; i--) {
+                        result = { [parts[i]]: result }
                     }
-                    return nested
+                    return result
                 })
             }
             continue
         }
 
-        // Xử lý *In suffix (enum arrays)
-        if (key.endsWith('In') && Array.isArray(value)) {
-            const prismaField = inFieldMap[key] || key.replace(/In$/, '')
-            where[prismaField] = { in: value }
+        // Enum "In" fields: ví dụ roleIn: [ADMIN, MANAGER] → role: { in: [...] }
+        if (inFieldMap[key]) {
+            const prismaField = inFieldMap[key]
+            if (Array.isArray(value) && value.length > 0) {
+                where[prismaField] = { in: value }
+            }
             continue
         }
 
-        // Xử lý primitive filter inputs (objects with eq, contains, etc.)
+        // Primitive filter inputs (object với eq, contains, gt, lte, ...)
         if (typeof value === 'object' && !Array.isArray(value)) {
-            const prismaSubFilter = buildPrimitiveFilter(value)
-            if (prismaSubFilter) {
-                where[key] = prismaSubFilter
+            const condition = mapPrimitiveFilter(value)
+            if (condition) {
+                where[key] = condition
             }
             continue
         }

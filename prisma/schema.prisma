@@ -4,8 +4,10 @@ generator client {
   output              = "../src/generated/prisma"
   runtime             = "nodejs"
   importFileExtension = "js"
+  previewFeatures = ["postgresqlExtensions"]
 }
 
 datasource db {
   provider = "postgresql"
+  extensions = [vector]
 }

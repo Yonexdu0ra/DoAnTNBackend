@@ -1,277 +1,252 @@
+// ═══════════════════════════════════════════
+//  Job Service
+// ═══════════════════════════════════════════
+
 import prisma from '../configs/prismaClient.js'
-import { buildPagePaginationArgs, buildPrismaFilter } from '../utils/pagination.js'
-import { createAuditLog } from '../utils/auditLog.js'
+import {
+    buildPagePaginationArgs,
+    buildPageInfo,
+    buildPrismaFilter,
+} from '../utils/pagination.js'
 
-const KEYWORD_FIELDS = ['title', 'description', 'address']
-const INCLUDE_MANAGERS = {
-    manager: {
-        include: {
-            user: { include: { profile: true, department: true, position: true } },
-        },
-    },
+// ── Filter options ──
+const JOB_FILTER_OPTIONS = {
+    keywordFields: ['title', 'description', 'address'],
+    inFieldMap: {},
 }
 
-// ── Query: danh sách jobs (admin, page-based) ──
+// ── Query ──
+
+/**
+ * Lấy công việc theo ID.
+ */
+const getJobById = async (id, userId, select) => {
+    if (!id) throw new Error('Thiếu ID công việc')
+
+    const findArgs = { where: { id } }
+    if (select) findArgs.select = select
+
+    const job = await prisma.job.findUnique(findArgs)
+
+    if (!job) {
+        throw new Error('Không tìm thấy công việc')
+    }
+
+    return job
+}
+
+/**
+ * Lấy danh sách công việc chung (dành cho Admin quản lý hệ thống).
+ */
 const getJobs = async (pagination, orderBy, filter, select) => {
-    const filterWhere = buildPrismaFilter(filter, { keywordFields: KEYWORD_FIELDS })
-    const args = buildPagePaginationArgs(pagination, orderBy, null, filterWhere)
+    const filterWhere = buildPrismaFilter(filter, JOB_FILTER_OPTIONS)
+    const findArgs = buildPagePaginationArgs(pagination, orderBy, select, filterWhere)
 
-    const [data, total] = await Promise.all([
-        prisma.job.findMany({
-            ...args,
-            ...(select ? { select } : {}),
-        }),
-        prisma.job.count({ where: args.where }),
+    const [items, total] = await Promise.all([
+        prisma.job.findMany(findArgs),
+        prisma.job.count({ where: filterWhere }),
     ])
 
-    const page = pagination?.page || 1
-    const limit = pagination?.limit || 10
-    const totalPages = Math.ceil(total / limit)
-
     return {
-        status: 'success',
-        code: 200,
-        message: 'Lấy danh sách công việc thành công',
-        data,
-        pagination: {
-            page,
-            limit,
-            total,
-            totalPages,
-            hasNextPage: page < totalPages,
-            hasPrevPage: page > 1,
-        },
+        nodes: items,
+        pageInfo: buildPageInfo(pagination, total),
     }
 }
 
-// ── Query: jobs của manager (page-based) ──
-const getJobsByManager = async (
-    userId,
-    pagination,
-    orderBy,
-    filter,
-    select,
-) => {
-    const filterWhere = buildPrismaFilter(filter, { keywordFields: KEYWORD_FIELDS })
-
-    // Lấy jobs mà user là manager
-    const jobIds = await prisma.jobManager.findMany({
-        where: { userId },
-        select: { jobId: true },
-    })
-
-    const args = buildPagePaginationArgs(pagination, orderBy, null, {
-        id: { in: jobIds.map((j) => j.jobId) },
-        ...filterWhere,
-    })
-
-    const [data, total] = await Promise.all([
-        prisma.job.findMany({
-            ...args,
-            ...(select ? { select } : {}),
-        }),
-        prisma.job.count({ where: args.where }),
-    ])
-
-    const page = pagination?.page || 1
-    const limit = pagination?.limit || 10
-    const totalPages = Math.ceil(total / limit)
-
-    return {
-        status: 'success',
-        code: 200,
-        message: 'Lấy danh sách công việc thành công',
-        data,
-        pagination: {
-            page,
-            limit,
-            total,
-            totalPages,
-            hasNextPage: page < totalPages,
-            hasPrevPage: page > 1,
-        },
-    }
-}
-
-// ── Query: jobs của employee (page-based) ──
-const getJobsByEmployee = async (
-    userId,
-    pagination,
-    orderBy,
-    filter,
-    select,
-) => {
-    const filterWhere = buildPrismaFilter(filter, { keywordFields: KEYWORD_FIELDS })
-
-    const args = buildPagePaginationArgs(pagination, orderBy, null, {
-        ...filterWhere,
+/**
+ * Lấy danh sách dự án mà Employee tham gia.
+ */
+const getJobsByEmployee = async (userId, pagination, orderBy, filter, select) => {
+    const baseFilter = buildPrismaFilter(filter, JOB_FILTER_OPTIONS)
+    const extraWhere = {
+        ...baseFilter,
         userJoinedJobs: {
-            some: {
-                userId,
-                status: 'APPROVED',
-            },
-        },
-    })
+            some: { userId }
+        }
+    }
 
-    const [data, total] = await Promise.all([
-        prisma.job.findMany({
-            ...args,
-            ...(select ? { select } : {}),
-        }),
-        prisma.job.count({ where: args.where }),
+    const findArgs = buildPagePaginationArgs(pagination, orderBy, select, extraWhere)
+
+    const [items, total] = await Promise.all([
+        prisma.job.findMany(findArgs),
+        prisma.job.count({ where: extraWhere }),
     ])
 
-    const page = pagination?.page || 1
-    const limit = pagination?.limit || 10
-    const totalPages = Math.ceil(total / limit)
-
     return {
-        status: 'success',
-        code: 200,
-        message: 'Lấy danh sách công việc thành công',
-        data,
-        pagination: {
-            page,
-            limit,
-            total,
-            totalPages,
-            hasNextPage: page < totalPages,
-            hasPrevPage: page > 1,
-        },
+        nodes: items,
+        pageInfo: buildPageInfo(pagination, total),
     }
 }
 
-// ── Mutation: tạo job (admin) ──
+/**
+ * Lấy danh sách dự án do Manager quản lý.
+ */
+const getJobsByManager = async (userId, pagination, orderBy, filter, select) => {
+    const baseFilter = buildPrismaFilter(filter, JOB_FILTER_OPTIONS)
+    const extraWhere = {
+        ...baseFilter,
+        manager: {
+            some: { userId }
+        }
+    }
+
+    const findArgs = buildPagePaginationArgs(pagination, orderBy, select, extraWhere)
+
+    const [items, total] = await Promise.all([
+        prisma.job.findMany(findArgs),
+        prisma.job.count({ where: extraWhere }),
+    ])
+
+    return {
+        nodes: items,
+        pageInfo: buildPageInfo(pagination, total),
+    }
+}
+
+// ── Mutation ──
+
+/**
+ * Tạo dự án công việc mới.
+ */
 const createJob = async (input, userId) => {
+    const { 
+        title, description, address, workStartTime, workEndTime, 
+        earlyCheckInMinutes, lateCheckInMinutes, earlyCheckOutMinutes, 
+        lateCheckOutMinutes, latitude, longitude, radius, maxMembers, managerIds 
+    } = input || {}
+
+    if (!title?.trim()) throw new Error('Thiếu tiêu đề dự án/công việc')
+    if (!address?.trim()) throw new Error('Thiếu địa chỉ')
+    if (latitude === undefined || longitude === undefined) throw new Error('Thiếu thông tin tọa độ')
+    if (!workStartTime || !workEndTime) throw new Error('Thiếu thời gian kiểm tra chuyên cần')
+
+    const start = new Date(workStartTime)
+    const end = new Date(workEndTime)
+
+    // Xác nhận quản lý hợp lệ (ROLE phải là MANAGER)
+    let managerRecords = []
+    if (managerIds && managerIds.length > 0) {
+        const validUsers = await prisma.user.findMany({
+            where: { id: { in: managerIds }, deletedAt: null }
+        })
+        
+        const validIds = validUsers.map(u => u.id)
+        if (validUsers.some(u => u.role !== 'MANAGER')) {
+            throw new Error('Một số người giám sát được chọn không hợp lệ (ROLE != MANAGER)')
+        }
+        
+        managerRecords = validIds.map(managerId => ({ userId: managerId }))
+    }
+
     const job = await prisma.job.create({
         data: {
-            title: input.title,
-            description: input.description || null,
-            address: input.address,
-            workStartTime: new Date(input.workStartTime),
-            workEndTime: new Date(input.workEndTime),
-            earlyCheckInMinutes: input.earlyCheckInMinutes ?? 15,
-            lateCheckInMinutes: input.lateCheckInMinutes ?? 15,
-            earlyCheckOutMinutes: input.earlyCheckOutMinutes ?? 15,
-            lateCheckOutMinutes: input.lateCheckOutMinutes ?? 15,
-            latitude: input.latitude,
-            longitude: input.longitude,
-            radius: input.radius,
-            maxMembers: input.maxMembers,
-            ...(input.managerIds?.length > 0 && {
-                manager: {
-                    create: input.managerIds.map((manId) => ({
-                        userId: manId,
-                    })),
-                },
-            }),
+            title: title.trim(),
+            description: description?.trim() || null,
+            address: address.trim(),
+            workStartTime: start,
+            workEndTime: end,
+            earlyCheckInMinutes: earlyCheckInMinutes ?? 15,
+            lateCheckInMinutes: lateCheckInMinutes ?? 15,
+            earlyCheckOutMinutes: earlyCheckOutMinutes ?? 15,
+            lateCheckOutMinutes: lateCheckOutMinutes ?? 15,
+            latitude,
+            longitude,
+            radius: radius ?? 50,
+            maxMembers: maxMembers ?? 0,
+            manager: managerRecords.length > 0 ? {
+                create: managerRecords
+            } : undefined
         },
-        include: INCLUDE_MANAGERS,
     })
 
-    await createAuditLog({
-        userId,
-        action: 'CREATE_JOB',
-        resource: 'Job',
-        resourceId: job.id,
-        newValue: job,
-    })
-
-    return {
-        status: 'success',
-        code: 201,
-        message: 'Tạo công việc thành công',
-        data: job,
-    }
+    return job
 }
 
-// ── Mutation: cập nhật job (admin) ──
+/**
+ * Cập nhật cấu hình và chi tiết công việc.
+ */
 const updateJob = async (input, userId) => {
-    const existing = await prisma.job.findUnique({
-        where: { id: input.jobId },
-        include: INCLUDE_MANAGERS,
-    })
-    if (!existing) throw new Error('Công việc không tồn tại')
+    const { jobId, data } = input || {}
 
-    const payload = input.data
+    if (!jobId) throw new Error('Thiếu ID công việc')
+    if (!data) throw new Error('Dữ liệu cập nhật trống')
+
+    const existing = await prisma.job.findUnique({ where: { id: jobId } })
+    if (!existing) throw new Error('Không tìm thấy công việc')
+
     const updateData = {}
-    if (payload.title !== undefined) updateData.title = payload.title
-    if (payload.description !== undefined) updateData.description = payload.description
-    if (payload.address !== undefined) updateData.address = payload.address
-    if (payload.workStartTime !== undefined) updateData.workStartTime = new Date(payload.workStartTime)
-    if (payload.workEndTime !== undefined) updateData.workEndTime = new Date(payload.workEndTime)
-    if (payload.earlyCheckInMinutes !== undefined) updateData.earlyCheckInMinutes = payload.earlyCheckInMinutes
-    if (payload.lateCheckInMinutes !== undefined) updateData.lateCheckInMinutes = payload.lateCheckInMinutes
-    if (payload.earlyCheckOutMinutes !== undefined) updateData.earlyCheckOutMinutes = payload.earlyCheckOutMinutes
-    if (payload.lateCheckOutMinutes !== undefined) updateData.lateCheckOutMinutes = payload.lateCheckOutMinutes
-    if (payload.latitude !== undefined) updateData.latitude = payload.latitude
-    if (payload.longitude !== undefined) updateData.longitude = payload.longitude
-    if (payload.radius !== undefined) updateData.radius = payload.radius
-    if (payload.maxMembers !== undefined) updateData.maxMembers = payload.maxMembers
+    
+    if (data.title !== undefined) updateData.title = data.title.trim()
+    if (data.description !== undefined) updateData.description = data.description?.trim() || null
+    if (data.address !== undefined) updateData.address = data.address.trim()
+    if (data.workStartTime !== undefined) updateData.workStartTime = new Date(data.workStartTime)
+    if (data.workEndTime !== undefined) updateData.workEndTime = new Date(data.workEndTime)
+    
+    if (data.earlyCheckInMinutes !== undefined) updateData.earlyCheckInMinutes = data.earlyCheckInMinutes
+    if (data.lateCheckInMinutes !== undefined) updateData.lateCheckInMinutes = data.lateCheckInMinutes
+    if (data.earlyCheckOutMinutes !== undefined) updateData.earlyCheckOutMinutes = data.earlyCheckOutMinutes
+    if (data.lateCheckOutMinutes !== undefined) updateData.lateCheckOutMinutes = data.lateCheckOutMinutes
+    
+    if (data.latitude !== undefined) updateData.latitude = data.latitude
+    if (data.longitude !== undefined) updateData.longitude = data.longitude
+    if (data.radius !== undefined) updateData.radius = data.radius
+    if (data.maxMembers !== undefined) updateData.maxMembers = data.maxMembers
 
-    // Nếu cập nhật managerIds, xoá hết và tạo lại
-    if (payload.managerIds !== undefined) {
-        await prisma.jobManager.deleteMany({ where: { jobId: input.jobId } })
-        if (payload.managerIds.length > 0) {
+    // Cập nhật người quản lý nếu có
+    if (data.managerIds) {
+        const validUsers = await prisma.user.findMany({
+            where: { id: { in: data.managerIds }, deletedAt: null }
+        })
+        
+        if (validUsers.some(u => u.role !== 'MANAGER')) {
+            throw new Error('Một số người giám sát không hợp lệ (ROLE != MANAGER)')
+        }
+
+        const validIds = validUsers.map(u => u.id)
+        
+        // Gán qua "set" => cái nào không ở trong mảng sẽ bị disconnect/remove
+        // Update data nested write: set không support onDelete cascade the way we need cho relationship 1-many đôi khi
+        // Vì Prisma relationship (Job -> JobManager) dùng manager thì phải thao tác delete trước.
+        await prisma.jobManager.deleteMany({ where: { jobId } })
+        
+        if (validIds.length > 0) {
             updateData.manager = {
-                create: payload.managerIds.map((manId) => ({
-                    userId: manId,
-                })),
+                create: validIds.map(managerId => ({ userId: managerId }))
             }
         }
     }
 
-    const updated = await prisma.job.update({
-        where: { id: input.jobId },
+    const updatedJob = await prisma.job.update({
+        where: { id: jobId },
         data: updateData,
-        include: INCLUDE_MANAGERS,
     })
 
-    await createAuditLog({
-        userId,
-        action: 'UPDATE_JOB',
-        resource: 'Job',
-        resourceId: updated.id,
-        oldValue: existing,
-        newValue: updated,
-    })
-
-    return {
-        status: 'success',
-        code: 200,
-        message: 'Cập nhật công việc thành công',
-        data: updated,
-    }
+    return updatedJob
 }
 
-// ── Mutation: xoá job (admin) ──
+/**
+ * Xóa cứng công việc. Toàn bộ record liên đới sẽ bị xóa ngầm nhờ quy tắc onDelete Cascade.
+ */
 const deleteJob = async (input, userId) => {
-    const existing = await prisma.job.findUnique({
-        where: { id: input.jobId },
-    })
-    if (!existing) throw new Error('Công việc không tồn tại')
+    const { jobId } = input || {}
+    if (!jobId) throw new Error('Thiếu ID công việc')
 
-    await prisma.job.delete({ where: { id: input.jobId } })
+    const existing = await prisma.job.findUnique({ where: { id: jobId } })
+    if (!existing) throw new Error('Không tìm thấy công việc')
 
-    await createAuditLog({
-        userId,
-        action: 'DELETE_JOB',
-        resource: 'Job',
-        resourceId: input.jobId,
-        oldValue: existing,
+    await prisma.job.delete({
+        where: { id: jobId }
     })
 
     return {
-        status: 'success',
-        code: 200,
-        message: 'Xoá công việc thành công',
     }
 }
 
 export default {
+    getJobById,
     getJobs,
-    getJobsByManager,
     getJobsByEmployee,
+    getJobsByManager,
     createJob,
     updateJob,
     deleteJob,

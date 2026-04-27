@@ -1,128 +1,184 @@
+// ═══════════════════════════════════════════
+//  Position Service
+// ═══════════════════════════════════════════
+
 import prisma from '../configs/prismaClient.js'
-import { buildPagePaginationArgs, buildPrismaFilter } from '../utils/pagination.js'
-import { createAuditLog } from '../utils/auditLog.js'
+import {
+    buildPagePaginationArgs,
+    buildPageInfo,
+    buildPrismaFilter,
+} from '../utils/pagination.js'
 
-const KEYWORD_FIELDS = ['name', 'description']
+// ── Filter options ──
+const POSITION_FILTER_OPTIONS = {
+    keywordFields: ['name', 'description'],
+    inFieldMap: {},
+}
 
-// ── Query: danh sách vị trí (admin) ──
+// ── Query ──
+
+/**
+ * Lấy chức vụ theo ID.
+ * 
+ * @param {string} id - position ID
+ * @param {Object|null} select - Prisma select
+ * @returns {Promise<PositionResponse>}
+ */
+const getPositionById = async (id, select) => {
+    if (!id) throw new Error('Thiếu ID chức vụ')
+
+    const findArgs = { where: { id } }
+    if (select) findArgs.select = select
+
+    const position = await prisma.position.findUnique(findArgs)
+
+    if (!position) {
+        throw new Error('Không tìm thấy chức vụ')
+    }
+
+    return position
+}
+
+/**
+ * Lấy danh sách chức vụ.
+ * 
+ * @param {Object|null} pagination - { page, limit }
+ * @param {Object|null} orderBy - { field, order }
+ * @param {Object|null} filter - PositionFilterInput
+ * @param {Object|null} select - Prisma select
+ * @returns {Promise<PositionListResponse>}
+ */
 const getPositions = async (pagination, orderBy, filter, select) => {
-    const filterWhere = buildPrismaFilter(filter, { keywordFields: KEYWORD_FIELDS })
-    const args = buildPagePaginationArgs(pagination, orderBy, null, filterWhere)
+    const filterWhere = buildPrismaFilter(filter, POSITION_FILTER_OPTIONS)
+    const findArgs = buildPagePaginationArgs(pagination, orderBy, select, filterWhere)
 
-    const [data, total] = await Promise.all([
-        prisma.position.findMany({
-            ...args,
-            ...(select ? { select } : {}),
-        }),
-        prisma.position.count({ where: args.where }),
+    const [items, total] = await Promise.all([
+        prisma.position.findMany(findArgs),
+        prisma.position.count({ where: filterWhere }),
     ])
 
-    const page = pagination?.page || 1
-    const limit = pagination?.limit || 10
-    const totalPages = Math.ceil(total / limit)
-
     return {
-        status: 'success',
-        code: 200,
-        message: 'Lấy danh sách vị trí thành công',
-        data,
-        pagination: {
-            page,
-            limit,
-            total,
-            totalPages,
-            hasNextPage: page < totalPages,
-            hasPrevPage: page > 1,
-        },
+        nodes: items,
+        pageInfo: buildPageInfo(pagination, total),
     }
 }
 
-// ── Mutation: tạo vị trí ──
-const createPosition = async (input, userId) => {
+// ── Mutation ──
+
+/**
+ * Tạo chức vụ mới.
+ * 
+ * @param {Object} input - { name, description, departmentId }
+ * @returns {Promise<PositionResponse>}
+ */
+const createPosition = async (input) => {
+    const { name, description, departmentId } = input || {}
+
+    if (!name?.trim()) throw new Error('Thiếu tên chức vụ')
+
+    // Nếu gán vào phòng ban, cần kiểm tra phòng ban có tồn tại không
+    if (departmentId) {
+        const department = await prisma.department.findUnique({
+            where: { id: departmentId }
+        })
+        if (!department) {
+            throw new Error('Không tìm thấy phòng ban')
+        }
+    }
+
     const position = await prisma.position.create({
         data: {
-            name: input.name,
-            description: input.description || null,
-            departmentId: input.departmentId || null,
+            name: name.trim(),
+            description: description?.trim() || null,
+            departmentId: departmentId || null,
         },
-        include: { department: true },
     })
 
-    await createAuditLog({
-        userId,
-        action: 'CREATE_POSITION',
-        resource: 'Position',
-        resourceId: position.id,
-        newValue: position,
-    })
-
-    return {
-        status: 'success',
-        code: 201,
-        message: 'Tạo vị trí thành công',
-        data: position,
-    }
+    return position
 }
 
-// ── Mutation: cập nhật vị trí ──
-const updatePosition = async (input, userId) => {
-    const existing = await prisma.position.findUnique({
-        where: { id: input.positionId },
-    })
-    if (!existing) throw new Error('Vị trí không tồn tại')
+/**
+ * Cập nhật thông tin chức vụ.
+ * 
+ * @param {Object} input - { positionId, name, description, departmentId }
+ * @returns {Promise<PositionResponse>}
+ */
+const updatePosition = async (input) => {
+    const { positionId, name, description, departmentId } = input || {}
 
-    const updated = await prisma.position.update({
-        where: { id: input.positionId },
-        data: {
-            ...(input.name !== undefined && { name: input.name }),
-            ...(input.description !== undefined && { description: input.description }),
-            ...(input.departmentId !== undefined && { departmentId: input.departmentId }),
-        },
-        include: { department: true },
-    })
+    if (!positionId) throw new Error('Thiếu ID chức vụ')
 
-    await createAuditLog({
-        userId,
-        action: 'UPDATE_POSITION',
-        resource: 'Position',
-        resourceId: updated.id,
-        oldValue: existing,
-        newValue: updated,
-    })
+    const existing = await prisma.position.findUnique({ where: { id: positionId } })
+    if (!existing) throw new Error('Không tìm thấy chức vụ')
 
-    return {
-        status: 'success',
-        code: 200,
-        message: 'Cập nhật vị trí thành công',
-        data: updated,
+    const updateData = {}
+    
+    if (name !== undefined) {
+        if (!name.trim()) throw new Error('Tên chức vụ không được để trống')
+        updateData.name = name.trim()
     }
+    
+    if (description !== undefined) {
+        updateData.description = description?.trim() || null
+    }
+
+    if (departmentId !== undefined) {
+        if (departmentId) {
+            const department = await prisma.department.findUnique({
+                where: { id: departmentId }
+            })
+            if (!department) {
+                throw new Error('Không tìm thấy phòng ban')
+            }
+        }
+        updateData.departmentId = departmentId || null
+    }
+
+    const updatedPosition = await prisma.position.update({
+        where: { id: positionId },
+        data: updateData,
+    })
+
+    return updatedPosition
 }
 
-// ── Mutation: xoá vị trí ──
-const deletePosition = async (input, userId) => {
+/**
+ * Xóa chức vụ.
+ * 
+ * @param {Object} input - { positionId }
+ * @returns {Promise<BaseResponse>}
+ */
+const deletePosition = async (input) => {
+    const { positionId } = input || {}
+
+    if (!positionId) throw new Error('Thiếu ID chức vụ')
+
     const existing = await prisma.position.findUnique({
-        where: { id: input.positionId },
+        where: { id: positionId },
+        include: {
+            _count: {
+                select: { users: true }
+            }
+        }
     })
-    if (!existing) throw new Error('Vị trí không tồn tại')
 
-    await prisma.position.delete({ where: { id: input.positionId } })
+    if (!existing) throw new Error('Không tìm thấy chức vụ')
 
-    await createAuditLog({
-        userId,
-        action: 'DELETE_POSITION',
-        resource: 'Position',
-        resourceId: input.positionId,
-        oldValue: existing,
+    // Ràng buộc bảo vệ dữ liệu: không cho phép xóa nếu đang có user giữ chức vụ này
+    if (existing._count.users > 0) {
+        throw new Error(`Không thể xóa chức vụ đang có người đảm nhận (${existing._count.users} người)`)
+    }
+
+    await prisma.position.delete({
+        where: { id: positionId },
     })
 
     return {
-        status: 'success',
-        code: 200,
-        message: 'Xoá vị trí thành công',
     }
 }
 
 export default {
+    getPositionById,
     getPositions,
     createPosition,
     updatePosition,

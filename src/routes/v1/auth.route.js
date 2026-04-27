@@ -1,8 +1,8 @@
 import { Router } from 'express'
-import { login, refreshToken, logout } from '../../controllers/auth.controller.js'
+import { login, refreshToken, logout, updateFcmToken, getWebsocketToken } from '../../controllers/auth.controller.js'
 import { getToken, verifyAccessToken } from '../../utils/token.js';
 const router = Router();
-const requireAuth = (req, res, next) => {
+export const requireAuth = (req, res, next) => {
   try {
     const token = getToken({ headers: req.headers, cookies: req.cookies });
     if (!token) throw new Error("Bạn không có quyền truy cập tài nguyên này!")
@@ -19,4 +19,6 @@ const requireAuth = (req, res, next) => {
 router.post('/login', login)
 router.post('/refresh-token', refreshToken)
 router.post('/logout', requireAuth, logout)
+router.post('/fcm-token', requireAuth, updateFcmToken)
+router.post('/ws', requireAuth, getWebsocketToken)
 export default router;

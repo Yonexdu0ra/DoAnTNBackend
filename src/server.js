@@ -18,6 +18,10 @@ import {
   buildWsUnauthenticatedReason,
   createUnauthenticatedGraphQLError,
 } from './utils/graphqlAuthError.js';
+import getClientIp from './utils/getClientIp.js';
+import prisma from './configs/prismaClient.js';
+import cookieParser from 'cookie-parser';
+import { requireToken } from './middlewares/auth.middleware.js';
 
 const PORT = process.env.PORT || 3002;
 
@@ -72,21 +76,10 @@ const serverCleanup = useServer({
       connectionParams: ctx.connectionParams,
       cookieName: 'access_token',
     });
-    if (!token) {
-      throw createUnauthenticatedGraphQLError(
-        AUTH_ERROR_REASON.TOKEN_MISSING,
-        'Unauthorized',
-      );
-    }
     const { decoded, reason } = verifyAccessTokenDetailed(token);
 
-    if (!decoded) {
-      throw createUnauthenticatedGraphQLError(
-        reason || AUTH_ERROR_REASON.TOKEN_INVALID,
-      );
-    }
+    return { user: decoded }
 
-    return { user: decoded };
   },
 }, wsServer);
 
@@ -118,10 +111,12 @@ await server.start();
 
 app.use(
   express.urlencoded({ extended: true }),
+  cookieParser(),
   cors({
     origin: [
       'https://qujs.online',
-    ], credentials: true
+    ],
+    credentials: true
   }),
   express.json()
 );
@@ -130,35 +125,27 @@ routes(app);
 
 app.use(
   '/api/v1/graphql',
+  requireToken,
   expressMiddleware(server, {
     context: async ({ req }) => {
-      const token = getToken({
-        headers: req.headers,
-        cookies: req.cookies,
-        cookieName: 'access_token',
-      });
-
+      console.log(req.user);
+      
+      const ip = getClientIp(req);
       const isIntrospection =
         req.body?.operationName === 'IntrospectionQuery';
       if (isIntrospection) {
         return {}; // 👈 luôn cho qua
       }
-
-      const { decoded, reason } = verifyAccessTokenDetailed(token);
-
-      if (!decoded) {
-        throw createUnauthenticatedGraphQLError(
-          reason || AUTH_ERROR_REASON.TOKEN_INVALID,
-        );
-      }
-
-      return { user: decoded };
+      return { ...req, ip }
     },
   }),
 );
 
-await new Promise((resolve) =>
-  httpServer.listen({ port: PORT }, resolve),
+await new Promise((resolve) => {
+  prisma.$connect();
+  httpServer.listen({ port: PORT }, resolve)
+}
+
 );
 console.log(`Server ready at http://${process.env.HOST_LOCAL}:${PORT}/graphql`);
 console.log(`WebSocket subscriptions at ws://${process.env.HOST_LOCAL}:${PORT}/graphql`);

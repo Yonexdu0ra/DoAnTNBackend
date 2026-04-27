@@ -1,124 +1,163 @@
+// ═══════════════════════════════════════════
+//  Department Service
+// ═══════════════════════════════════════════
+
 import prisma from '../configs/prismaClient.js'
-import { buildPagePaginationArgs, buildPrismaFilter } from '../utils/pagination.js'
-import { createAuditLog } from '../utils/auditLog.js'
+import {
+    buildPagePaginationArgs,
+    buildPageInfo,
+    buildPrismaFilter,
+} from '../utils/pagination.js'
 
-const KEYWORD_FIELDS = ['name', 'description']
+// ── Filter options ──
+const DEPARTMENT_FILTER_OPTIONS = {
+    keywordFields: ['name', 'description'],
+    inFieldMap: {},
+}
 
-// ── Query: danh sách phòng ban (admin) ──
+// ── Query ──
+
+/**
+ * Lấy phòng ban theo ID.
+ * 
+ * @param {string} id - department ID
+ * @param {Object|null} select - Prisma select
+ * @returns {Promise<DepartmentResponse>}
+ */
+const getDepartmentById = async (id, select) => {
+    if (!id) throw new Error('Thiếu ID phòng ban')
+
+    const findArgs = { where: { id } }
+    if (select) findArgs.select = select
+
+    const department = await prisma.department.findUnique(findArgs)
+
+    if (!department) {
+        throw new Error('Không tìm thấy phòng ban')
+    }
+
+    return department
+}
+
+/**
+ * Lấy danh sách phòng ban.
+ * 
+ * @param {Object|null} pagination - { page, limit }
+ * @param {Object|null} orderBy - { field, order }
+ * @param {Object|null} filter - DepartmentFilterInput
+ * @param {Object|null} select - Prisma select
+ * @returns {Promise<DepartmentListResponse>}
+ */
 const getDepartments = async (pagination, orderBy, filter, select) => {
-    const filterWhere = buildPrismaFilter(filter, { keywordFields: KEYWORD_FIELDS })
-    const args = buildPagePaginationArgs(pagination, orderBy, null, filterWhere)
+    const filterWhere = buildPrismaFilter(filter, DEPARTMENT_FILTER_OPTIONS)
+    const findArgs = buildPagePaginationArgs(pagination, orderBy, select, filterWhere)
 
-    const [data, total] = await Promise.all([
-        prisma.department.findMany({
-            ...args,
-            ...(select ? { select } : {}),
-        }),
-        prisma.department.count({ where: args.where }),
+    const [items, total] = await Promise.all([
+        prisma.department.findMany(findArgs),
+        prisma.department.count({ where: filterWhere }),
     ])
 
-    const page = pagination?.page || 1
-    const limit = pagination?.limit || 10
-    const totalPages = Math.ceil(total / limit)
-
     return {
-        status: 'success',
-        code: 200,
-        message: 'Lấy danh sách phòng ban thành công',
-        data,
-        pagination: {
-            page,
-            limit,
-            total,
-            totalPages,
-            hasNextPage: page < totalPages,
-            hasPrevPage: page > 1,
-        },
+        nodes: items,
+        pageInfo: buildPageInfo(pagination, total),
     }
 }
 
-// ── Mutation: tạo phòng ban ──
-const createDepartment = async (input, userId) => {
+// ── Mutation ──
+
+/**
+ * Tạo mới phòng ban.
+ * 
+ * @param {Object} input - { name, description }
+ * @returns {Promise<DepartmentResponse>}
+ */
+const createDepartment = async (input) => {
+    const { name, description } = input || {}
+
+    if (!name?.trim()) throw new Error('Thiếu tên phòng ban')
+
     const department = await prisma.department.create({
         data: {
-            name: input.name,
-            description: input.description || null,
+            name: name.trim(),
+            description: description?.trim() || null,
         },
     })
 
-    await createAuditLog({
-        userId,
-        action: 'CREATE_DEPARTMENT',
-        resource: 'Department',
-        resourceId: department.id,
-        newValue: department,
-    })
-
-    return {
-        status: 'success',
-        code: 201,
-        message: 'Tạo phòng ban thành công',
-        data: department,
-    }
+    return department
 }
 
-// ── Mutation: cập nhật phòng ban ──
-const updateDepartment = async (input, userId) => {
-    const existing = await prisma.department.findUnique({
-        where: { id: input.departmentId },
-    })
-    if (!existing) throw new Error('Phòng ban không tồn tại')
+/**
+ * Cập nhật thông tin phòng ban.
+ * 
+ * @param {Object} input - { departmentId, name, description }
+ * @returns {Promise<DepartmentResponse>}
+ */
+const updateDepartment = async (input) => {
+    const { departmentId, name, description } = input || {}
 
-    const updated = await prisma.department.update({
-        where: { id: input.departmentId },
-        data: {
-            ...(input.name !== undefined && { name: input.name }),
-            ...(input.description !== undefined && { description: input.description }),
-        },
-    })
+    if (!departmentId) throw new Error('Thiếu ID phòng ban')
 
-    await createAuditLog({
-        userId,
-        action: 'UPDATE_DEPARTMENT',
-        resource: 'Department',
-        resourceId: updated.id,
-        oldValue: existing,
-        newValue: updated,
-    })
+    const existing = await prisma.department.findUnique({ where: { id: departmentId } })
+    if (!existing) throw new Error('Không tìm thấy phòng ban')
 
-    return {
-        status: 'success',
-        code: 200,
-        message: 'Cập nhật phòng ban thành công',
-        data: updated,
+    const updateData = {}
+    if (name !== undefined) {
+        if (!name.trim()) throw new Error('Tên phòng ban không được để trống')
+        updateData.name = name.trim()
     }
+    if (description !== undefined) {
+        updateData.description = description?.trim() || null
+    }
+
+    const updatedDepartment = await prisma.department.update({
+        where: { id: departmentId },
+        data: updateData,
+    })
+
+    return updatedDepartment
 }
 
-// ── Mutation: xoá phòng ban ──
-const deleteDepartment = async (input, userId) => {
+/**
+ * Xóa phòng ban.
+ * 
+ * @param {Object} input - { departmentId }
+ * @returns {Promise<BaseResponse>}
+ */
+const deleteDepartment = async (input) => {
+    const { departmentId } = input || {}
+
+    if (!departmentId) throw new Error('Thiếu ID phòng ban')
+
     const existing = await prisma.department.findUnique({
-        where: { id: input.departmentId },
+        where: { id: departmentId },
+        include: {
+            _count: {
+                select: { users: true, positions: true }
+            }
+        }
     })
-    if (!existing) throw new Error('Phòng ban không tồn tại')
 
-    await prisma.department.delete({ where: { id: input.departmentId } })
+    if (!existing) throw new Error('Không tìm thấy phòng ban')
 
-    await createAuditLog({
-        userId,
-        action: 'DELETE_DEPARTMENT',
-        resource: 'Department',
-        resourceId: input.departmentId,
-        oldValue: existing,
+    // Kiểm tra ràng buộc (không cho phép xóa nếu có nhân viên hoặc chức vụ)
+    if (existing._count.users > 0) {
+        throw new Error(`Không thể xóa phòng ban đang có nhân viên (${existing._count.users} người)`)
+    }
+    
+    if (existing._count.positions > 0) {
+        throw new Error(`Không thể xóa phòng ban đang có chức vụ (${existing._count.positions} chức vụ)`)
+    }
+
+    await prisma.department.delete({
+        where: { id: departmentId },
     })
 
     return {
-        status: 'success',
-        code: 200,
-        message: 'Xoá phòng ban thành công',
     }
 }
 
 export default {
+    getDepartmentById,
     getDepartments,
     createDepartment,
     updateDepartment,

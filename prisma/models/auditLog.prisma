@@ -13,5 +13,5 @@ model AuditLog {
   userAgent String? // trình duyệt / app
 
   status    String // SUCCESS / FAIL
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("created_at")
 }

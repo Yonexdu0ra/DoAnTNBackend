@@ -1,0 +1,14 @@
+model DocumentChunk {
+    id         String                      @id @default(uuid(7))
+    documentId String                      @map("document_id")
+    // content là phần nội dung của đoạn văn bản, có thể là một đoạn văn bản nhỏ hoặc một câu, tùy thuộc vào cách bạn chia nhỏ tài liệu gốc.
+    content    String
+    // index là vị trí của đoạn văn bản trong tài liệu gốc, giúp xác định thứ tự của các đoạn văn bản khi tái tạo lại tài liệu gốc.
+    chunkIndex Int
+    // 2048 là kích thước vector do model @cf/pfnet/plamo-embedding-1b embedding
+    embedding  Unsupported("vector(2048)")
+    createdAt  DateTime                    @default(now()) @map("created_at")
+    updatedAt  DateTime                    @updatedAt @map("updated_at")
+
+    Document Document @relation(fields: [documentId], references: [id])
+}

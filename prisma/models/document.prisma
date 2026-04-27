@@ -1,0 +1,7 @@
+model Document {
+    id        String   @id @default(uuid(7))
+    title     String
+    chunks    DocumentChunk[]
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
+}

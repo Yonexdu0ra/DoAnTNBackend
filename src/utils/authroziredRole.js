@@ -39,7 +39,6 @@ export const hasAnyRole = (context, allowedRoles = []) => {
 // đảm bảo rằng role có quyền truy cập vào operation, nếu không sẽ ném lỗi Unauthorized hoặc Forbidden
 export const ensureAuthorized = (context, allowedRoles = [], operationName = 'operation') => {
 	if (!allowedRoles || allowedRoles.length === 0) return
-
 	const role = getRoleFromContext(context)
 	if (!role) {
 		throw createUnauthenticatedGraphQLError(

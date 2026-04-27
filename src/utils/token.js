@@ -33,9 +33,9 @@ export const getToken = ({
 } = {}) => {
   const cookieToken =
     cookies?.[cookieName] ||
-    cookies?.accessToken ||
+    cookies?.access_token ||
     cookies?.token;
-  
+
   if (cookieToken) {
     return extractBearerToken(cookieToken);
   }
@@ -62,15 +62,12 @@ export const getToken = ({
 }
 
 
-export const generateAccessToken = (data) => {
-  const payload = {
-    ...data
-  };
+export const generateAccessToken = (data, expiresIn = '15m') => {
+  const { exp, iat, ...payload } = data;
+
   const secret = process.env.ACCESS_TOKEN_SECRET;
-    const options = {
-    expiresIn: '15m', 
-  };
-  return jwt.sign(payload, secret, options);
+  
+  return jwt.sign(payload, secret, { expiresIn });
 }
 
 
@@ -126,8 +123,8 @@ export const generateRefreshToken = (data) => {
     ...data
   };
   const secret = process.env.REFRESH_TOKEN_SECRET;
-    const options = {
-    expiresIn: '7d', 
+  const options = {
+    expiresIn: '7d',
   };
   return jwt.sign(payload, secret, options);
 }

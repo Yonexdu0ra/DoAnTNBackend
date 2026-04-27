@@ -5,6 +5,6 @@ model Position {
     departmentId String?    @map("department_id")
     department   Department? @relation("DepartmentPositions", fields: [departmentId], references: [id])
     users        User[]     @relation("PositionUsers")
-    createdAt    DateTime   @default(now())
-    updatedAt    DateTime   @updatedAt
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @updatedAt @map("updated_at")
 }

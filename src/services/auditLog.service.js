@@ -1,38 +1,43 @@
+// ═══════════════════════════════════════════
+//  AuditLog Service
+// ═══════════════════════════════════════════
+
 import prisma from '../configs/prismaClient.js'
-import { buildPagePaginationArgs, buildPrismaFilter } from '../utils/pagination.js'
+import {
+    buildPagePaginationArgs,
+    buildPageInfo,
+    buildPrismaFilter,
+} from '../utils/pagination.js'
 
-const KEYWORD_FIELDS = ['action', 'resource', 'ipAddress', 'userAgent']
+// ── Filter options ──
+const AUDIT_LOG_FILTER_OPTIONS = {
+    keywordFields: ['action', 'resource', 'ipAddress', 'userAgent', 'status'],
+    inFieldMap: {},
+}
 
-// ── Query: danh sách nhật ký hoạt động (admin) ──
+// ── Query ──
+
+/**
+ * Lấy danh sách nhật ký hoạt động (admin).
+ *
+ * @param {Object|null} pagination - { page, limit }
+ * @param {Object|null} orderBy - { field, order }
+ * @param {Object|null} filter - AuditLogFilterInput
+ * @param {Object|null} select - Prisma select
+ * @returns {Promise<AuditLogListResponse>}
+ */
 const getAuditLogs = async (pagination, orderBy, filter, select) => {
-    const filterWhere = buildPrismaFilter(filter, { keywordFields: KEYWORD_FIELDS })
-    const args = buildPagePaginationArgs(pagination, orderBy, null, filterWhere)
+    const filterWhere = buildPrismaFilter(filter, AUDIT_LOG_FILTER_OPTIONS)
+    const findArgs = buildPagePaginationArgs(pagination, orderBy, select, filterWhere)
 
-    const [data, total] = await Promise.all([
-        prisma.auditLog.findMany({
-            ...args,
-            ...(select ? { select } : {}),
-        }),
-        prisma.auditLog.count({ where: args.where }),
+    const [items, total] = await Promise.all([
+        prisma.auditLog.findMany(findArgs),
+        prisma.auditLog.count({ where: filterWhere }),
     ])
 
-    const page = pagination?.page || 1
-    const limit = pagination?.limit || 10
-    const totalPages = Math.ceil(total / limit)
-
     return {
-        status: 'success',
-        code: 200,
-        message: 'Lấy danh sách nhật ký hoạt động thành công',
-        data,
-        pagination: {
-            page,
-            limit,
-            total,
-            totalPages,
-            hasNextPage: page < totalPages,
-            hasPrevPage: page > 1,
-        },
+        nodes: items,
+        pageInfo: buildPageInfo(pagination, total),
     }
 }
 

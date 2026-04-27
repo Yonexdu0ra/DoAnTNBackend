@@ -1,44 +1,69 @@
+// ═══════════════════════════════════════════
+//  Holiday Service
+// ═══════════════════════════════════════════
+
 import prisma from '../configs/prismaClient.js'
-import { buildPagePaginationArgs, buildPrismaFilter } from '../utils/pagination.js'
-import { createAuditLog } from '../utils/auditLog.js'
+import {
+    buildPagePaginationArgs,
+    buildPageInfo,
+    buildPrismaFilter,
+} from '../utils/pagination.js'
 
-const KEYWORD_FIELDS = ['name', 'description']
-const IN_FIELD_MAP = { typeIn: 'type' }
+// ── Filter options ──
+const HOLIDAY_FILTER_OPTIONS = {
+    keywordFields: ['name', 'description'],
+    inFieldMap: {
+        typeIn: 'type',
+    },
+}
 
-// ── Query: lấy holidays theo khoảng thời gian (common) ──
-const getHolidays = async (startDate, endDate, filter, select) => {
-    const filterWhere = buildPrismaFilter(filter, {
-        keywordFields: KEYWORD_FIELDS,
-        inFieldMap: IN_FIELD_MAP,
-    })
+// ── Query ──
 
-    const where = { ...filterWhere }
+/**
+ * Lấy lịch nghỉ theo ID.
+ */
+const getHolidayById = async (id, select) => {
+    if (!id) throw new Error('Thiếu ID ngày nghỉ')
 
-    if (startDate || endDate) {
-        where.AND = []
-        if (startDate) {
-            where.AND.push({ endDate: { gte: new Date(startDate) } })
-        }
-        if (endDate) {
-            where.AND.push({ startDate: { lte: new Date(endDate) } })
-        }
+    const findArgs = { where: { id } }
+    if (select) findArgs.select = select
+
+    const holiday = await prisma.holiday.findUnique(findArgs)
+
+    if (!holiday) {
+        throw new Error('Không tìm thấy ngày nghỉ')
     }
 
-    const data = await prisma.holiday.findMany({
+    return holiday
+}
+
+/**
+ * Lấy danh sách ngày nghỉ theo khoảng thời gian (không phân trang).
+ */
+const getHolidays = async (startDate, endDate, filter, select) => {
+    const filterWhere = buildPrismaFilter(filter, HOLIDAY_FILTER_OPTIONS)
+
+    const where = { ...filterWhere }
+    if (startDate || endDate) {
+        where.startDate = {}
+        if (startDate) where.startDate.gte = new Date(startDate)
+        if (endDate) where.startDate.lte = new Date(endDate)
+    }
+
+    const findArgs = {
         where,
-        ...(select ? { select } : {}),
         orderBy: { startDate: 'asc' },
-    })
+    }
+    if (select) findArgs.select = select
+
+    const items = await prisma.holiday.findMany(findArgs)
 
     return {
-        status: 'success',
-        code: 200,
-        message: 'Lấy danh sách ngày nghỉ thành công',
-        data,
-        pagination: {
+        nodes: items,
+        pageInfo: {
             page: 1,
-            limit: data.length,
-            total: data.length,
+            limit: items.length,
+            total: items.length,
             totalPages: 1,
             hasNextPage: false,
             hasPrevPage: false,
@@ -46,135 +71,114 @@ const getHolidays = async (startDate, endDate, filter, select) => {
     }
 }
 
-// ── Query: danh sách holidays (admin, page-based) ──
+/**
+ * Lấy danh sách ngày nghỉ có phân trang cho admin quản lý.
+ */
 const getHolidaysAdmin = async (pagination, orderBy, filter, select) => {
-    const filterWhere = buildPrismaFilter(filter, {
-        keywordFields: KEYWORD_FIELDS,
-        inFieldMap: IN_FIELD_MAP,
-    })
+    const filterWhere = buildPrismaFilter(filter, HOLIDAY_FILTER_OPTIONS)
+    const findArgs = buildPagePaginationArgs(pagination, orderBy, select, filterWhere)
 
-    const args = buildPagePaginationArgs(pagination, orderBy, null, filterWhere)
-
-    const [data, total] = await Promise.all([
-        prisma.holiday.findMany({
-            ...args,
-            ...(select ? { select } : {}),
-        }),
-        prisma.holiday.count({ where: args.where }),
+    const [items, total] = await Promise.all([
+        prisma.holiday.findMany(findArgs),
+        prisma.holiday.count({ where: filterWhere }),
     ])
 
-    const page = pagination?.page || 1
-    const limit = pagination?.limit || 10
-    const totalPages = Math.ceil(total / limit)
-
     return {
-        status: 'success',
-        code: 200,
-        message: 'Lấy danh sách ngày nghỉ thành công',
-        data,
-        pagination: {
-            page,
-            limit,
-            total,
-            totalPages,
-            hasNextPage: page < totalPages,
-            hasPrevPage: page > 1,
-        },
+        nodes: items,
+        pageInfo: buildPageInfo(pagination, total),
     }
 }
 
-// ── Mutation: tạo holiday (admin) ──
-const createHoliday = async (input, userId) => {
-    const holiday = await prisma.holiday.create({
+// ── Mutation ──
+
+/**
+ * Tạo mới ngày nghỉ.
+ */
+const createHoliday = async (input) => {
+    const { name, type, userId, description, startDate, endDate, isPaid } = input || {}
+
+    if (!name?.trim()) throw new Error('Thiếu tên ngày nghỉ')
+    if (!type) throw new Error('Thiếu loại ngày nghỉ')
+    if (!startDate || !endDate) throw new Error('Thiếu thời gian bắt đầu và kết thúc')
+
+    const start = new Date(startDate)
+    const end = new Date(endDate)
+
+    if (start > end) {
+        throw new Error('Thời gian kết thúc không được trước thời gian bắt đầu')
+    }
+
+    return prisma.holiday.create({
         data: {
-            name: input.name,
-            type: input.type,
-            description: input.description || null,
-            startDate: new Date(input.startDate),
-            endDate: new Date(input.endDate),
-            isPaid: input.isPaid ?? false,
+            name: name.trim(),
+            type,
+            userId: userId || null,
+            description: description?.trim() || null,
+            startDate: start,
+            endDate: end,
+            isPaid: isPaid ?? false,
         },
     })
-
-    await createAuditLog({
-        userId,
-        action: 'CREATE_HOLIDAY',
-        resource: 'Holiday',
-        resourceId: holiday.id,
-        newValue: holiday,
-    })
-
-    return {
-        status: 'success',
-        code: 201,
-        message: 'Tạo ngày nghỉ thành công',
-        data: holiday,
-    }
 }
 
-// ── Mutation: cập nhật holiday (admin) ──
-const updateHoliday = async (input, userId) => {
-    const existing = await prisma.holiday.findUnique({
-        where: { id: input.holidayId },
-    })
-    if (!existing) throw new Error('Ngày nghỉ không tồn tại')
+/**
+ * Cập nhật thông tin ngày nghỉ.
+ */
+const updateHoliday = async (input) => {
+    const { holidayId, data } = input || {}
+
+    if (!holidayId) throw new Error('Thiếu ID ngày nghỉ')
+
+    const existing = await prisma.holiday.findUnique({ where: { id: holidayId } })
+    if (!existing) throw new Error('Không tìm thấy ngày nghỉ')
 
     const updateData = {}
-    const payload = input.data
-    if (payload.name !== undefined) updateData.name = payload.name
-    if (payload.type !== undefined) updateData.type = payload.type
-    if (payload.description !== undefined) updateData.description = payload.description
-    if (payload.startDate !== undefined) updateData.startDate = new Date(payload.startDate)
-    if (payload.endDate !== undefined) updateData.endDate = new Date(payload.endDate)
-    if (payload.isPaid !== undefined) updateData.isPaid = payload.isPaid
+    if (data?.name !== undefined) {
+        if (!data.name.trim()) throw new Error('Tên ngày nghỉ không được để trống')
+        updateData.name = data.name.trim()
+    }
+    if (data?.type !== undefined) updateData.type = data.type
+    if (data?.userId !== undefined) updateData.userId = data.userId || null
+    if (data?.description !== undefined) updateData.description = data.description?.trim() || null
+    if (data?.isPaid !== undefined) updateData.isPaid = data.isPaid
 
-    const updated = await prisma.holiday.update({
-        where: { id: input.holidayId },
+    if (data?.startDate !== undefined || data?.endDate !== undefined) {
+        const start = data.startDate ? new Date(data.startDate) : existing.startDate
+        const end = data.endDate ? new Date(data.endDate) : existing.endDate
+
+        if (start > end) {
+            throw new Error('Thời gian kết thúc không được trước thời gian bắt đầu')
+        }
+        updateData.startDate = start
+        updateData.endDate = end
+    }
+
+    return prisma.holiday.update({
+        where: { id: holidayId },
         data: updateData,
     })
-
-    await createAuditLog({
-        userId,
-        action: 'UPDATE_HOLIDAY',
-        resource: 'Holiday',
-        resourceId: updated.id,
-        oldValue: existing,
-        newValue: updated,
-    })
-
-    return {
-        status: 'success',
-        code: 200,
-        message: 'Cập nhật ngày nghỉ thành công',
-        data: updated,
-    }
 }
 
-// ── Mutation: xoá holiday (admin) ──
-const deleteHoliday = async (input, userId) => {
-    const existing = await prisma.holiday.findUnique({
-        where: { id: input.holidayId },
-    })
-    if (!existing) throw new Error('Ngày nghỉ không tồn tại')
+/**
+ * Xóa ngày nghỉ.
+ */
+const deleteHoliday = async (input) => {
+    const { holidayId } = input || {}
 
-    await prisma.holiday.delete({ where: { id: input.holidayId } })
+    if (!holidayId) throw new Error('Thiếu ID ngày nghỉ')
 
-    await createAuditLog({
-        userId,
-        action: 'DELETE_HOLIDAY',
-        resource: 'Holiday',
-        resourceId: input.holidayId,
-        oldValue: existing,
+    const existing = await prisma.holiday.findUnique({ where: { id: holidayId } })
+    if (!existing) throw new Error('Không tìm thấy ngày nghỉ')
+
+    await prisma.holiday.delete({
+        where: { id: holidayId },
     })
 
-    return {
-        status: 'success',
-        code: 200,
-        message: 'Xoá ngày nghỉ thành công',
-    }
+    return true
 }
 
 export default {
+    getHolidayById,
     getHolidays,
     getHolidaysAdmin,
     createHoliday,

@@ -211,6 +211,7 @@ type User {
     code: String
     biometricEnabled: Boolean
     role: Role
+    isLocked: Boolean
     profile: Profile
     department: Department
     position: Position
@@ -219,6 +220,17 @@ type User {
     deleteAt: Date
     createdAt: Date
     updatedAt: Date
+}
+
+type AttendanceMeta {
+    ipAddress: String
+    deviceId: String
+    latitude: Float
+    longitude: Float
+    # SCAN_QR, COMPENSATORY
+    attendanceWith: String
+    distance: Float
+    attendanceAt: Date
 }
 # Bảng chấm công (điểm danh) của nhân viên
 type Attendance {
@@ -257,6 +269,7 @@ type Holiday {
   id: ID!
   name: String!
   type: HolidayType
+  userId: ID
   description: String
   startDate: Date
   isPaid: Boolean
@@ -370,13 +383,14 @@ type UserJoinedJob {
   job: Job
 }
 
-# output response dùng chung
-type BaseResponse {
-  status: String!
-  code: Int!
-  message: String!
+# Bảng cáu hình của hệ thống
+type Config {
+  id: ID!
+  key: String!
+  value: JSON
+  createdAt: Date
+  updatedAt: Date
 }
-
 type PageInfo {
   page: Int!
   limit: Int!
@@ -392,265 +406,89 @@ type CursorPageInfo {
   hasNextPage: Boolean!
 }
 
-# response theo từng type
-type PositonResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: Positon
+# ═══════════════════════════════════════════
+# CONNECTION TYPES (page-based)
+# ═══════════════════════════════════════════
+
+type PositionConnection {
+  nodes: [Position!]!
+  pageInfo: PageInfo!
 }
 
-type PositonListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [Positon!]!
-  pagination: PageInfo
+type DepartmentConnection {
+  nodes: [Department!]!
+  pageInfo: PageInfo!
 }
 
-type PositionResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: Position
+type UserConnection {
+  nodes: [User!]!
+  pageInfo: PageInfo!
 }
 
-type PositionListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [Position!]!
-  pagination: PageInfo
+type AttendanceConnection {
+  nodes: [Attendance!]!
+  pageInfo: PageInfo!
 }
 
-type DepartmentResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: Department
+type AuditLogConnection {
+  nodes: [AuditLog!]!
+  pageInfo: PageInfo!
 }
 
-type DepartmentListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [Department!]!
-  pagination: PageInfo
+type HolidayConnection {
+  nodes: [Holiday!]!
+  pageInfo: PageInfo!
 }
 
-type ProfileResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: Profile
+type JobConnection {
+  nodes: [Job!]!
+  pageInfo: PageInfo!
 }
 
-type ProfileListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [Profile!]!
-  pagination: PageInfo
+type LeaveRequestConnection {
+  nodes: [LeaveRequest!]!
+  pageInfo: PageInfo!
 }
 
-type UserResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: User
+type OvertimeRequestConnection {
+  nodes: [OvertimeRequest!]!
+  pageInfo: PageInfo!
 }
 
-type UserListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [User!]!
-  pagination: PageInfo
+type ConfigConnection {
+  nodes: [Config!]!
+  pageInfo: PageInfo!
 }
 
-type AttendanceResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: Attendance
+# ═══════════════════════════════════════════
+# CONNECTION TYPES (cursor-based)
+# ═══════════════════════════════════════════
+
+type AttendanceCursorConnection {
+  nodes: [Attendance!]!
+  pageInfo: CursorPageInfo!
 }
 
-type AttendanceListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [Attendance!]!
-  pagination: PageInfo
+type LeaveRequestCursorConnection {
+  nodes: [LeaveRequest!]!
+  pageInfo: CursorPageInfo!
 }
 
-type AttendanceCursorListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [Attendance!]!
-  pagination: CursorPageInfo
+type NotificationCursorConnection {
+  nodes: [Notification!]!
+  pageInfo: CursorPageInfo!
 }
 
-type AuditLogResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: AuditLog
+type OvertimeRequestCursorConnection {
+  nodes: [OvertimeRequest!]!
+  pageInfo: CursorPageInfo!
 }
 
-type AuditLogListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [AuditLog!]!
-  pagination: PageInfo
-}
+# ═══════════════════════════════════════════
+# SHARED DASHBOARD BUILDING BLOCKS
+# ═══════════════════════════════════════════
 
-type HolidayResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: Holiday
-}
-
-type HolidayListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [Holiday!]!
-  pagination: PageInfo
-}
-
-type JobResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: Job
-}
-
-type JobListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [Job!]!
-  pagination: PageInfo
-}
-
-type JobManagerResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: JobManager
-}
-
-type JobManagerListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [JobManager!]!
-  pagination: PageInfo
-}
-
-type LeaveRequestResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: LeaveRequest
-}
-
-type LeaveRequestListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [LeaveRequest!]!
-  pagination: PageInfo
-}
-
-type LeaveRequestCursorListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [LeaveRequest!]!
-  pagination: CursorPageInfo
-}
-
-type NotificationResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: Notification
-}
-
-type NotificationListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [Notification!]!
-  pagination: PageInfo
-}
-
-type NotificationCursorListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [Notification!]!
-  pagination: CursorPageInfo
-}
-
-type OvertimeRequestResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: OvertimeRequest
-}
-
-type OvertimeRequestListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [OvertimeRequest!]!
-  pagination: PageInfo
-}
-
-type OvertimeRequestCursorListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [OvertimeRequest!]!
-  pagination: CursorPageInfo
-}
-
-type UserDeviceResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: UserDevice
-}
-
-type UserDeviceListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [UserDevice!]!
-  pagination: PageInfo
-}
-
-type UserJoinedJobResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: UserJoinedJob
-}
-
-type UserJoinedJobListResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: [UserJoinedJob!]!
-  pagination: PageInfo
-}
-
-# shared dashboard blocks
+# Cảnh báo hiển thị trên dashboard
 type DashboardAlert {
   id: ID
   type: String!
@@ -661,18 +499,27 @@ type DashboardAlert {
   isRead: Boolean
 }
 
+# Điểm dữ liệu cho biểu đồ đường / cột
 type DashboardChartPoint {
   time: String!
   value: Float!
   label: String
 }
 
+# Biểu đồ nhiều dòng (multi-series) - ví dụ: so sánh present vs late vs absent
+type DashboardChartSeries {
+  name: String!
+  data: [DashboardChartPoint!]!
+}
+
+# Item trong biểu đồ phân phối (pie / donut / bar)
 type DashboardDistributionItem {
   label: String!
   value: Float!
   percentage: Float!
 }
 
+# Hoạt động gần đây
 type DashboardActivity {
   id: ID
   type: String!
@@ -681,80 +528,224 @@ type DashboardActivity {
   status: String
   createdAt: Date
   relatedId: ID
+  userName: String
 }
 
+# Hành động nhanh
 type DashboardQuickAction {
   key: String!
   label: String!
+  icon: String
   enabled: Boolean!
   route: String
 }
 
-# Admin / HR Manager dashboard
+# Card tổng hợp có so sánh trend
+type DashboardStatCard {
+  label: String!
+  value: Float!
+  previousValue: Float
+  changePercent: Float
+  changeDirection: String
+}
+
+# ═══════════════════════════════════════════
+# ADMIN / HR MANAGER DASHBOARD
+# ═══════════════════════════════════════════
+
+# Tổng quan nhân sự
 type AdminSummaryStatistics {
   totalEmployees: Int!
   activeEmployees: Int!
+  inactiveEmployees: Int!
+  lockedEmployees: Int!
+  newHiresThisMonth: Int!
+  terminationsThisMonth: Int!
   leavesAbsences: Int!
   openJobs: Int!
+  totalManagers: Int!
+  totalDepartments: Int!
+  employeeGrowthPercent: Float
+  leaveTrendPercent: Float
 }
 
+# Thống kê chấm công hôm nay
 type AdminAttendanceStatistics {
   todayCheckIns: Int!
   todayCheckOuts: Int!
+  totalRecordsToday: Int!
   onTimeRate: Float!
   lateRate: Float!
   absentRate: Float!
+  earlyLeaveRate: Float!
+  missingCheckinRate: Float!
+  missingCheckoutRate: Float!
+  halfDayRate: Float!
+  overtimeRate: Float!
+  workFromHomeCount: Int!
+  businessTripCount: Int!
+  fraudCount: Int!
 }
 
+# Thống kê nghỉ phép
+type AdminLeaveStatistics {
+  pendingLeaveRequests: Int!
+  approvedLeaves: Int!
+  rejectedLeaves: Int!
+  canceledLeaves: Int!
+  totalLeaveDaysUsed: Float!
+  averageLeaveDaysPerEmployee: Float!
+  leaveTypeDistribution: [DashboardDistributionItem!]!
+  leaveStatusDistribution: [DashboardDistributionItem!]!
+}
+
+# Thống kê tăng ca
+type AdminOvertimeStatistics {
+  pendingOvertimeRequests: Int!
+  approvedOvertime: Int!
+  rejectedOvertime: Int!
+  totalOvertimeMinutes: Int!
+  averageOvertimeMinutesPerEmployee: Float!
+  overtimeStatusDistribution: [DashboardDistributionItem!]!
+}
+
+# Tổng quan công việc
 type AdminJobOverviewStatistics {
-  openJobs: Int!
+  totalJobs: Int!
+  activeJobs: Int!
+  completedJobs: Int!
+  upcomingJobs: Int!
+  totalCapacity: Int!
   assignedEmployees: Int!
   unassignedEmployees: Int!
+  averageManningLevel: Float!
 }
 
+# Thống kê thông báo
+type AdminNotificationStatistics {
+  totalNotifications: Int!
+  unreadNotifications: Int!
+  notificationTypeDistribution: [DashboardDistributionItem!]!
+}
+
+# Biểu đồ cho Admin
 type AdminChartsStatistics {
+  # Biểu đồ đường: tăng trưởng nhân sự theo thời gian
   workforceGrowth: [DashboardChartPoint!]!
+  # Biểu đồ đường: xu hướng nghỉ phép
   leaveTrend: [DashboardChartPoint!]!
+  # Biểu đồ đường: xu hướng tăng ca
+  overtimeTrend: [DashboardChartPoint!]!
+  # Biểu đồ tròn: phân phối nhân viên theo phòng ban
   departmentDistribution: [DashboardDistributionItem!]!
+  # Biểu đồ tròn: phân phối theo vai trò
+  roleDistribution: [DashboardDistributionItem!]!
+  # Biểu đồ tròn: phân phối theo chức vụ
+  positionDistribution: [DashboardDistributionItem!]!
+  # Biểu đồ heatmap: mật độ chấm công theo ngày
+  attendanceHeatmap: [DashboardChartPoint!]!
+  # Biểu đồ multi-series: so sánh loại chấm công theo thời gian
+  attendanceTypeTrend: [DashboardChartSeries!]!
+  # Biểu đồ đường: xu hướng gian lận chấm công
+  fraudTrend: [DashboardChartPoint!]!
+  # Biểu đồ tròn: phân phối giới tính
+  genderDistribution: [DashboardDistributionItem!]!
 }
 
 type AdminDashboardStatisticsData {
   summary: AdminSummaryStatistics!
   attendanceStats: AdminAttendanceStatistics!
+  leaveStats: AdminLeaveStatistics!
+  overtimeStats: AdminOvertimeStatistics!
   jobOverview: AdminJobOverviewStatistics!
+  notificationStats: AdminNotificationStatistics!
   alerts: [DashboardAlert!]!
   charts: AdminChartsStatistics!
   recentActivities: [DashboardActivity!]!
   quickActions: [DashboardQuickAction!]!
 }
 
-type AdminDashboardStatisticsResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: AdminDashboardStatisticsData
-}
 
-# Manager dashboard
+
+# ═══════════════════════════════════════════
+# MANAGER DASHBOARD
+# ═══════════════════════════════════════════
+
+# KPI đội nhóm hôm nay
 type ManagerTeamKpiStatistics {
   totalTeamEmployees: Int!
-  todayAttendance: Int!
-  teamLeaves: Int!
+  presentToday: Int!
+  absentToday: Int!
+  lateToday: Int!
+  onLeaveToday: Int!
+  workFromHomeToday: Int!
+  onTimeRate: Float!
+  attendanceRate: Float!
 }
 
+# Thống kê chấm công team
+type ManagerAttendanceStatistics {
+  totalRecordsInPeriod: Int!
+  onTimeRate: Float!
+  lateRate: Float!
+  absentRate: Float!
+  earlyLeaveRate: Float!
+  fraudCount: Int!
+  attendanceTypeDistribution: [DashboardDistributionItem!]!
+}
+
+# Thống kê nghỉ phép team
+type ManagerLeaveStatistics {
+  pendingTeamLeaveRequests: Int!
+  approvedTeamLeavesThisMonth: Int!
+  rejectedTeamLeavesThisMonth: Int!
+  totalTeamLeaveDaysUsed: Float!
+  leaveTypeDistribution: [DashboardDistributionItem!]!
+  leaveStatusDistribution: [DashboardDistributionItem!]!
+}
+
+# Thống kê tăng ca team
+type ManagerOvertimeStatistics {
+  pendingTeamOvertimeRequests: Int!
+  approvedTeamOvertimeThisMonth: Int!
+  totalTeamOvertimeMinutes: Int!
+  overtimeStatusDistribution: [DashboardDistributionItem!]!
+}
+
+# Trạng thái công việc
 type ManagerJobTaskStatusStatistics {
-  totalTeamJobs: Int!
-  averageProgress: Float!
+  totalManagedJobs: Int!
+  activeJobs: Int!
+  upcomingJobs: Int!
+  completedJobs: Int!
+  totalCapacity: Int!
+  averageManningLevel: Float!
   unassignedEmployees: Int!
 }
 
+# Biểu đồ cho Manager
 type ManagerChartsStatistics {
-  attendanceTrend: [DashboardChartPoint!]!
-  taskDistribution: [DashboardDistributionItem!]!
+  # Biểu đồ đường: xu hướng chấm công team
+  teamAttendanceTrend: [DashboardChartPoint!]!
+  # Biểu đồ đường: xu hướng nghỉ phép team
+  teamLeaveTrend: [DashboardChartPoint!]!
+  # Biểu đồ đường: xu hướng tăng ca team
+  teamOvertimeTrend: [DashboardChartPoint!]!
+  # Biểu đồ tròn: phân phối trạng thái công việc
+  jobStatusDistribution: [DashboardDistributionItem!]!
+  # Biểu đồ multi-series: loại chấm công team theo thời gian
+  teamAttendanceTypeTrend: [DashboardChartSeries!]!
+  # Biểu đồ tròn: phân phối nhân viên theo phòng ban trong team
+  teamDepartmentDistribution: [DashboardDistributionItem!]!
+  # Biểu đồ heatmap: giờ làm việc team
+  teamWorkingHoursHeatmap: [DashboardChartPoint!]!
 }
 
 type ManagerDashboardStatisticsData {
   teamKpi: ManagerTeamKpiStatistics!
+  attendanceStats: ManagerAttendanceStatistics!
+  leaveStats: ManagerLeaveStatistics!
+  overtimeStats: ManagerOvertimeStatistics!
   jobTaskStatus: ManagerJobTaskStatusStatistics!
   alerts: [DashboardAlert!]!
   charts: ManagerChartsStatistics!
@@ -762,43 +753,96 @@ type ManagerDashboardStatisticsData {
   quickActions: [DashboardQuickAction!]!
 }
 
-type ManagerDashboardStatisticsResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: ManagerDashboardStatisticsData
-}
 
-# Employee dashboard
+
+# ═══════════════════════════════════════════
+# EMPLOYEE DASHBOARD
+# ═══════════════════════════════════════════
+
+# Tổng quan cá nhân
 type EmployeePersonalSummaryStatistics {
   todayAttendanceStatus: String
+  todayCheckInTime: Date
+  todayCheckOutTime: Date
+  todayWorkingHours: Float
+  currentStreakDays: Int!
   remainingLeaveDays: Float!
+  usedLeaveDays: Float!
+  totalLeaveDays: Float!
+  pendingLeaveRequests: Int!
+  pendingOvertimeRequests: Int!
+  totalPendingRequests: Int!
   activeJobs: Int!
+  totalOvertimeMinutesThisMonth: Int!
+  monthlyAttendanceRate: Float!
 }
 
+# Thống kê chấm công tháng này
+type EmployeeMonthlyAttendanceSummary {
+  totalWorkDays: Int!
+  presentDays: Int!
+  absentDays: Int!
+  lateDays: Int!
+  earlyLeaveDays: Int!
+  onLeaveDays: Int!
+  workFromHomeDays: Int!
+  overtimeDays: Int!
+  attendanceRate: Float!
+  onTimeRate: Float!
+}
+
+# Cân đối phép chi tiết
+type EmployeeLeaveBalanceStatistics {
+  totalAnnualLeave: Float!
+  usedAnnualLeave: Float!
+  remainingAnnualLeave: Float!
+  usedSickLeave: Float!
+  usedPersonalLeave: Float!
+  usedCompensatoryLeave: Float!
+  usedUnpaidLeave: Float!
+  leaveUsageDistribution: [DashboardDistributionItem!]!
+}
+
+# Sự kiện sắp tới
+type EmployeeUpcomingEvent {
+  id: ID!
+  title: String!
+  date: Date!
+  endDate: Date
+  type: String!
+  isPaid: Boolean
+}
+
+# Biểu đồ cho Employee
 type EmployeeChartsStatistics {
+  # Biểu đồ đường: xu hướng chấm công cá nhân
   attendanceTrend: [DashboardChartPoint!]!
+  # Biểu đồ đường: xu hướng nghỉ phép cá nhân
   leaveTrend: [DashboardChartPoint!]!
+  # Biểu đồ đường: xu hướng giờ làm việc
+  workingHoursTrend: [DashboardChartPoint!]!
+  # Biểu đồ đường: xu hướng tăng ca
+  overtimeTrend: [DashboardChartPoint!]!
+  # Biểu đồ tròn: phân phối loại chấm công
+  attendanceTypeDistribution: [DashboardDistributionItem!]!
+  # Biểu đồ tròn: phân phối sử dụng phép
+  leaveTypeDistribution: [DashboardDistributionItem!]!
+  # Biểu đồ đường: xu hướng giờ check-in thực tế
+  checkInTimeTrend: [DashboardChartPoint!]!
 }
 
 type EmployeeDashboardStatisticsData {
   personalSummary: EmployeePersonalSummaryStatistics!
+  monthlyAttendance: EmployeeMonthlyAttendanceSummary!
+  leaveBalance: EmployeeLeaveBalanceStatistics!
   alerts: [DashboardAlert!]!
   charts: EmployeeChartsStatistics!
   recentActivities: [DashboardActivity!]!
+  upcomingEvents: [EmployeeUpcomingEvent!]!
   quickActions: [DashboardQuickAction!]!
 }
 
-type EmployeeDashboardStatisticsResponse {
-  status: String!
-  code: Int!
-  message: String!
-  data: EmployeeDashboardStatisticsData
-}
-
-type QRCodeResponse {
-  status: String!
-  code: Int!
+type QRCodeData {
   expireAt: Date!
   timeBase: Date!
   qrCodeData: String!
@@ -959,6 +1003,7 @@ input HolidayFilterInput {
   id: IDFilterInput
   name: StringFilterInput
   typeIn: [HolidayType!]
+  userId: IDFilterInput
   description: StringFilterInput
   startDate: DateFilterInput
   endDate: DateFilterInput
@@ -1066,6 +1111,14 @@ input UserJoinedJobFilterInput {
   updatedAt: DateFilterInput
 }
 
+input ConfigFilterInput {
+  id: IDFilterInput
+  key: StringFilterInput
+  createdAt: DateFilterInput
+  updatedAt: DateFilterInput
+  keyword: String
+}
+
 input DashboardStatisticsFilterInput {
   fromDate: Date
   toDate: Date
@@ -1121,6 +1174,13 @@ input CancelOvertimeRequestInput {
   reason: String
 }
 
+input AttendanceByQRCodeInput {
+  qrCodeData: String!
+  latitude: Float!
+  longitude: Float!
+  deviceId: String!
+}
+
 # mutation inputs manager
 input ReviewLeaveRequestInput {
   leaveRequestId: ID!
@@ -1143,8 +1203,18 @@ input CreateCompensatoryOvertimeRequestForEmployeeInput {
   date: Date!
   startTime: Date!
   endTime: Date!
-  minutes: Int!
   reason: String!
+}
+
+input CreateCompensatoryAttendanceForEmployeeInput {
+  userId: ID!
+  jobId: ID!
+  date: Date!
+  checkInAt: Date!
+  checkOutAt: Date!
+  isFraud: Boolean
+  fraudReason: String
+  reason: String
 }
 
 input ReviewOvertimeRequestInput {
@@ -1232,6 +1302,7 @@ input RemoveManagerFromJobInput {
 input CreateHolidayInput {
   name: String!
   type: HolidayType!
+  userId: ID
   description: String
   startDate: Date!
   endDate: Date!
@@ -1241,6 +1312,7 @@ input CreateHolidayInput {
 input UpdateHolidayPayloadInput {
   name: String
   type: HolidayType
+  userId: ID
   description: String
   startDate: Date
   endDate: Date
@@ -1328,6 +1400,27 @@ input ResetUserPasswordInput {
   userId: ID!
 }
 
+input CreateConfigInput {
+  key: String!
+  value: JSON!
+}
+
+input UpdateConfigInput {
+  configId: ID!
+  key: String
+  value: JSON
+}
+
+input DeleteConfigInput {
+  configId: ID!
+}
+
+input ToggleLockUserInput {
+  userId: ID!
+  isLocked: Boolean!
+  reason: String
+}
+
 
  
 `
@@ -1336,176 +1429,122 @@ input ResetUserPasswordInput {
 const queryType = gql`
 type Query {
   # query chung 
-  # lấy thông báo của người dùng (có phân trang, filter, sort)
-  notifications(pagination: CursorPaginationInput, orderBy: SortOrderInput, filter: NotificationFilterInput): NotificationCursorListResponse
-  # lấy thông tin lịch sử ngày nghỉ lễ (để hiển thị lịch làm việc)
-  # sẽ hiển thị từ đầu tháng tới cuối tháng
-  holidays(startDate: Date, endDate: Date, filter: HolidayFilterInput): HolidayListResponse
-  # lấy thông tin chi tiết của người dùng hiện tại (để hiển thị trang cá nhân)
-  # dùng để lấy thông tin profile, vị trí công việc, phòng ban, v.v. của người dùng
-  # ping để check token hợp lệ và lấy thông tin người dùng
-  me: UserResponse
+  notifications(pagination: CursorPaginationInput, orderBy: SortOrderInput, filter: NotificationFilterInput): NotificationCursorConnection
+  holidays(startDate: Date, endDate: Date, filter: HolidayFilterInput): HolidayConnection
+  me: User
+  totalMemberJoinedByJobId(jobId: ID!): Int
+  totalMemberJoinedByJobIds(jobIds: [ID!]!): [Int!]!
   # query riêng dành cho employee
-  # lấy thông tin chấm công của nhân viên theo khoảng thời gian (để hiển thị lịch sử chấm công)
-  # sẽ hiển thị từ đầu tháng tới cuối tháng hoặc theo khoảng thời gian tuỳ chọn
-  attendancesByEmployeeByTime(startDate: Date!, endDate: Date!, filter: AttendanceFilterInput): AttendanceListResponse
-  # lấy thông tin chấm công của nhân viên theo phân trang cho mobile, filter, sort (để hiển thị lịch sử chấm công có phân trang)
-  attendancesByEmployees(pagination: CursorPaginationInput, orderBy: SortOrderInput, filter: AttendanceFilterInput): AttendanceCursorListResponse
-  # lấy thông tin các yêu cầu nghỉ phép của nhân viên theo phân trang mobile, filter, sort (để hiển thị lịch sử nghỉ phép có phân trang)
-  leaveRequestsByEmployee(pagination: CursorPaginationInput, orderBy: SortOrderInput, filter: LeaveRequestFilterInput): LeaveRequestCursorListResponse
-  # lấy thông tin các yêu cầu làm thêm giờ của nhân viên theo phân trang mobile, filter, sort (để hiển thị lịch sử làm thêm giờ có phân trang)
-  overtimeRequestsByEmployee(pagination: CursorPaginationInput, orderBy: SortOrderInput, filter: OvertimeRequestFilterInput): OvertimeRequestCursorListResponse
-  # thống kê dashboard cho employee
-  employeeDashboardStatistics(filter: DashboardStatisticsFilterInput): EmployeeDashboardStatisticsResponse
-  # lấy thông tin các công việc mà nhân viên tham gia theo phân trang, filter, sort (để hiển thị danh sách công việc của nhân viên)
-  jobsByEmployee(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: JobFilterInput): JobListResponse
-
+  attendancesByEmployeeByTime(startDate: Date!, endDate: Date!, filter: AttendanceFilterInput): AttendanceConnection
+  attendancesByEmployees(pagination: CursorPaginationInput, orderBy: SortOrderInput, filter: AttendanceFilterInput): AttendanceCursorConnection
+  leaveRequestsByEmployee(pagination: CursorPaginationInput, orderBy: SortOrderInput, filter: LeaveRequestFilterInput): LeaveRequestCursorConnection
+  overtimeRequestsByEmployee(pagination: CursorPaginationInput, orderBy: SortOrderInput, filter: OvertimeRequestFilterInput): OvertimeRequestCursorConnection
+  employeeDashboardStatistics(filter: DashboardStatisticsFilterInput): EmployeeDashboardStatisticsData
+  jobsByEmployee(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: JobFilterInput): JobConnection
+  
+  # lấy các thông tin đơn lẻ theo ID
+  attendanceById(id: ID): Attendance
+  leaveRequestById(id: ID): LeaveRequest
+  overtimeRequestById(id: ID): OvertimeRequest
+  jobById(id: ID): Job
+  notificationById(id: ID): Notification
+  holidayById(id: ID): Holiday
+  departmentById(id: ID): Department
+  positionById(id: ID): Position
+  userById(id: ID): User
+  configById(key: String): Config
 
   # query riêng dành cho manager
-  # lấy thông tin các công việc mà manager quản lý theo phân trang, filter, sort (để hiển thị danh sách công việc của manager)
-  jobsByManager(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: JobFilterInput): JobListResponse
-  # lấy thông tin các nhân viên tham gia công việc của manager theo phân trang, filter, sort (để hiển thị danh sách nhân viên theo công việc của manager)
-  usersByJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: UserFilterInput): UserListResponse
-  # lấy thông tin các yêu cầu nghỉ phép của nhân viên theo công việc của manager theo phân trang, filter, sort (để hiển thị lịch sử nghỉ phép theo công việc của manager)
-  leaveRequestsByJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: LeaveRequestFilterInput): LeaveRequestListResponse
-  # lấy thông tin các nhân viên chưa tham gia công việc của manager theo phân trang, filter, sort (để hiển thị danh sách nhân viên chưa tham gia công việc của manager)
-  searchEmployeesByJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: UserFilterInput): UserListResponse
-  # lấy thông tin các yêu cầu làm thêm giờ của nhân viên theo công việc của manager theo phân trang, filter, sort (để hiển thị lịch sử làm thêm giờ theo công việc của manager)
-  overtimeRequestsByJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: OvertimeRequestFilterInput): OvertimeRequestListResponse
-  # lấy thông tin các chấm công của nhân viên theo công việc của manager theo phân trang, filter, sort (để hiển thị lịch sử chấm công theo công việc của manager)
-  attendancesByJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: AttendanceFilterInput): AttendanceListResponse
-  # thống kê dashboard cho manager / team lead
-  managerDashboardStatistics(filter: DashboardStatisticsFilterInput): ManagerDashboardStatisticsResponse
-
-
+  jobsByManager(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: JobFilterInput): JobConnection
+  usersByJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: UserFilterInput): UserConnection
+  leaveRequestsByJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: LeaveRequestFilterInput): LeaveRequestConnection
+  searchEmployeesNotInJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: UserFilterInput): UserConnection
+  searchEmployeesByJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: UserFilterInput): UserConnection
+  overtimeRequestsByJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: OvertimeRequestFilterInput): OvertimeRequestConnection
+  attendancesByJob(jobId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: AttendanceFilterInput): AttendanceConnection
+  managerDashboardStatistics(filter: DashboardStatisticsFilterInput): ManagerDashboardStatisticsData
 
   # query riêng dành cho admin
-  # tìm kiếm manager theo tên hoặc email để thêm vào công việc theo phân trang, filter, sort (để hiển thị danh sách manager khi thêm manager vào công việc)
-  searchManager(search: String!, filter: UserFilterInput): UserListResponse
-  # lấy thông tin tất cả người dùng theo phân trang, filter, sort (để hiển thị danh sách người dùng cho admin)
-  users(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: UserFilterInput): UserListResponse
-  # lấy thông tin tất cả công việc theo phân trang, filter, sort (để hiển thị danh sách công việc cho admin)
-  jobs(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: JobFilterInput): JobListResponse
-  # lấy thông tin tất cả nhật ký hoạt động theo phân trang, filter, sort (để hiển thị danh sách nhật ký hoạt động cho admin)
-  auditLogs(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: AuditLogFilterInput): AuditLogListResponse
-  # lấy thông tin tất cả ngày nghỉ lễ theo phân trang, filter, sort (để hiển thị danh sách ngày nghỉ lễ cho
-  holidaysAdmin(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: HolidayFilterInput): HolidayListResponse
-  # lấy thông tin tất cả phòng ban theo phân trang, filter, sort (để hiển thị danh sách phòng ban cho admin)
-  departments(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: DepartmentFilterInput): DepartmentListResponse
-  # lấy thông tin tất cả vị trí công việc theo phân trang, filter, sort (để hiển thị danh sách vị trí công việc cho admin)
-  positions(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: PositionFilterInput): PositionListResponse
-  # thống kê dashboard cho admin / hr manager
-  adminDashboardStatistics(filter: DashboardStatisticsFilterInput): AdminDashboardStatisticsResponse
-  
+  searchManager(search: String!, filter: UserFilterInput): UserConnection
+  searchUser(search: String!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: UserFilterInput): UserConnection
+  users(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: UserFilterInput): UserConnection
+  jobs(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: JobFilterInput): JobConnection
+  auditLogs(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: AuditLogFilterInput): AuditLogConnection
+  holidaysAdmin(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: HolidayFilterInput): HolidayConnection
+  departments(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: DepartmentFilterInput): DepartmentConnection
+  positions(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: PositionFilterInput): PositionConnection
+  adminDashboardStatistics(filter: DashboardStatisticsFilterInput): AdminDashboardStatisticsData
+  configs(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: ConfigFilterInput): ConfigConnection
 }
 `
 
 const mutationType = gql`
 type Mutation {
   # mutation chung
-  # đánh dấu đã đọc thông báo của người dùng (để cập nhật trạng thái thông báo)
-  markNotificationAsRead(input: MarkNotificationAsReadInput!): NotificationResponse
-  # đánh dấu tất cả thông báo của người dùng đã đọc (để cập nhật trạng thái tất cả thông báo)
-  markAllNotificationsAsRead(input: MarkAllNotificationsAsReadInput): BaseResponse
-  # cập nhật thông tin cá nhân (để nhân viên cập nhật thông tin cá nhân của mình)
-  updateProfile(input: UpdateProfileInput!): ProfileResponse
+  markNotificationAsRead(input: MarkNotificationAsReadInput!): Notification
+  markAllNotificationsAsRead(input: MarkAllNotificationsAsReadInput): Boolean
+  updateProfile(input: UpdateProfileInput!): Profile
 
   # mutation riêng dành cho employee
-  # tạo yêu cầu nghỉ phép (để nhân viên gửi yêu cầu nghỉ phép)
-  createLeaveRequest(input: CreateLeaveRequestInput!): LeaveRequestResponse
-  # tạo yêu cầu làm thêm giờ (để nhân viên gửi yêu cầu làm thêm giờ)
-  createOvertimeRequest(input: CreateOvertimeRequestInput!): OvertimeRequestResponse
-  # huỷ yêu cầu nghỉ phép (để nhân viên huỷ yêu cầu nghỉ phép đã gửi nếu chưa phản hồi)
-  cancelLeaveRequest(input: CancelLeaveRequestInput!): LeaveRequestResponse
-  # huỷ yêu cầu làm thêm giờ (để nhân viên huỷ yêu cầu làm thêm giờ đã gửi nếu chưa phản hồi)
-  cancelOvertimeRequest(input: CancelOvertimeRequestInput!): OvertimeRequestResponse
+  createLeaveRequest(input: CreateLeaveRequestInput!): LeaveRequest
+  createOvertimeRequest(input: CreateOvertimeRequestInput!): OvertimeRequest
+  cancelLeaveRequest(input: CancelLeaveRequestInput!): LeaveRequest
+  cancelOvertimeRequest(input: CancelOvertimeRequestInput!): OvertimeRequest
+  attendanceByQRCode(input: AttendanceByQRCodeInput!): Attendance
 
   # mutation riêng dành cho manager
-  # phê duyệt hoặc từ chối yêu cầu nghỉ phép của nhân viên (để manager phản hồi yêu cầu nghỉ phép của nhân viên)
-  reviewLeaveRequest(input: ReviewLeaveRequestInput!): LeaveRequestResponse
-  # tạo yêu cầu nghỉ phép cho nhân viên (để manager gửi yêu cầu nghỉ phép cho nhân viên nếu cần thiết)
-  createCompensatoryLeaveRequestForEmployee(input: CreateCompensatoryLeaveRequestForEmployeeInput!): LeaveRequestResponse
-  # tạo yêu cầu làm thêm giờ cho nhân viên (để manager gửi yêu cầu làm thêm giờ cho nhân viên nếu cần thiết)
-  createCompensatoryOvertimeRequestForEmployee(input: CreateCompensatoryOvertimeRequestForEmployeeInput!): OvertimeRequestResponse
-  # phê duyệt hoặc từ chối yêu cầu làm thêm giờ của nhân viên (để manager phản hồi yêu cầu làm thêm giờ của nhân viên)
-  reviewOvertimeRequest(input: ReviewOvertimeRequestInput!): OvertimeRequestResponse
-  # thêm nhân viên vào công việc (để manager quản lý nhân viên tham gia công việc của mình)
-  addEmployeeToJob(input: AddEmployeeToJobInput!): UserJoinedJobResponse
-  # xoá nhân viên khỏi công việc (để manager quản lý nhân viên tham gia công việc của mình)
-  removeEmployeeFromJob(input: RemoveEmployeeFromJobInput!): UserJoinedJobResponse
-  # phê duyệt hoặc từ chối yêu cầu gian lận chấm công của nhân viên (để manager phản hồi yêu cầu gian lận chấm công của nhân viên)
-  reviewAttendanceFraud(input: ReviewAttendanceFraudInput!): AttendanceResponse
-  # đánh dấu employee gian lận chấm công (để manager quản lý gian lận chấm công của nhân viên)
-  markAttendanceAsFraudByJob(input: MarkAttendanceAsFraudByJobInput!): AttendanceResponse
+  reviewLeaveRequest(input: ReviewLeaveRequestInput!): LeaveRequest
+  createCompensatoryLeaveRequestForEmployee(input: CreateCompensatoryLeaveRequestForEmployeeInput!): LeaveRequest
+  createCompensatoryOvertimeRequestForEmployee(input: CreateCompensatoryOvertimeRequestForEmployeeInput!): OvertimeRequest
+  createCompensatoryAttendanceForEmployee(input: CreateCompensatoryAttendanceForEmployeeInput!): Attendance
+  reviewOvertimeRequest(input: ReviewOvertimeRequestInput!): OvertimeRequest
+  addEmployeeToJob(input: AddEmployeeToJobInput!): UserJoinedJob
+  removeEmployeeFromJob(input: RemoveEmployeeFromJobInput!): UserJoinedJob
+  reviewAttendanceFraud(input: ReviewAttendanceFraudInput!): Attendance
+  markAttendanceAsFraudByJob(input: MarkAttendanceAsFraudByJobInput!): Attendance
 
   # mutation riêng dành cho admin
-  # tạo mới công việc (để admin quản lý công việc)
-  createJob(input: CreateJobInput!): JobResponse
-  # cập nhật công việc (để admin quản lý công việc)
-  updateJob(input: UpdateJobInput!): JobResponse
-  # xoá công việc (để admin quản lý công việc)
-  deleteJob(input: DeleteJobInput!): BaseResponse
-  # thêm manager vào công việc (để admin quản lý manager của công việc)
-  addManagerToJob(input: AddManagerToJobInput!): JobManagerResponse
-  # xoá manager khỏi công việc (để admin quản lý manager của công việc)
-  removeManagerFromJob(input: RemoveManagerFromJobInput!): JobManagerResponse
-  # tạo mới ngày nghỉ lễ (để admin quản lý ngày nghỉ lễ)
-  createHoliday(input: CreateHolidayInput!): HolidayResponse
-  # cập nhật ngày nghỉ lễ (để admin quản lý ngày nghỉ lễ)
-  updateHoliday(input: UpdateHolidayInput!): HolidayResponse
-  # xoá ngày nghỉ lễ (để admin quản lý ngày nghỉ lễ)
-  deleteHoliday(input: DeleteHolidayInput!): BaseResponse
-  # tạo mới phòng ban (để admin quản lý phòng ban)
-  createDepartment(input: CreateDepartmentInput!): DepartmentResponse
-  # cập nhật phòng ban (để admin quản lý phòng ban)
-  updateDepartment(input: UpdateDepartmentInput!): DepartmentResponse
-  # xoá phòng ban (để admin quản lý phòng ban)
-  deleteDepartment(input: DeleteDepartmentInput!): BaseResponse
-  # tạo mới vị trí công việc (để admin quản lý vị trí công việc)
-  createPosition(input: CreatePositionInput!): PositionResponse
-  # cập nhật vị trí công việc (để admin quản lý vị trí công việc)
-  updatePosition(input: UpdatePositionInput!): PositionResponse
-  # xoá vị trí công việc (để admin quản lý vị trí công việc)
-  deletePosition(input: DeletePositionInput!): BaseResponse
-  # tạo mới người dùng (để admin quản lý người dùng)
-  createUser(input: CreateUserInput!): UserResponse
-  # cập nhật người dùng (để admin quản lý người dùng)
-  updateUser(input: UpdateUserInput!): UserResponse
-  # xoá người dùng (để admin quản lý người dùng)
-  deleteUser(input: DeleteUserInput!): BaseResponse
-  # reset mật khẩu người dùng (để admin quản lý người dùng)
-  resetUserPassword(input: ResetUserPasswordInput!): BaseResponse
-
+  createJob(input: CreateJobInput!): Job
+  updateJob(input: UpdateJobInput!): Job
+  deleteJob(input: DeleteJobInput!): Boolean
+  addManagerToJob(input: AddManagerToJobInput!): JobManager
+  removeManagerFromJob(input: RemoveManagerFromJobInput!): JobManager
+  createHoliday(input: CreateHolidayInput!): Holiday
+  updateHoliday(input: UpdateHolidayInput!): Holiday
+  deleteHoliday(input: DeleteHolidayInput!): Boolean
+  createDepartment(input: CreateDepartmentInput!): Department
+  updateDepartment(input: UpdateDepartmentInput!): Department
+  deleteDepartment(input: DeleteDepartmentInput!): Boolean
+  createPosition(input: CreatePositionInput!): Position
+  updatePosition(input: UpdatePositionInput!): Position
+  deletePosition(input: DeletePositionInput!): Boolean
+  createUser(input: CreateUserInput!): User
+  updateUser(input: UpdateUserInput!): User
+  deleteUser(input: DeleteUserInput!): Boolean
+  resetUserPassword(input: ResetUserPasswordInput!): Boolean
+  createConfig(input: CreateConfigInput!): Config
+  updateConfig(input: UpdateConfigInput!): Config
+  deleteConfig(input: DeleteConfigInput!): Config
+  toggleLockUser(input: ToggleLockUserInput!): User
 }
 `
 
 const subscriptionType = gql`
 type Subscription {
-
   # subscription chung
-  userReceivedNotification: NotificationResponse
+  userReceivedNotification: Notification
 
   # dành cho employee
-  # subscription để nhận trạng thái xin nghỉ phép
-  employeeReceivedLeaveRequestStatus: LeaveRequestResponse
-  # subscription để nhận trạng thái xin làm thêm giờ
-  employeeReceivedOvertimeRequestStatus: OvertimeRequestResponse
-  # subscription để nhận trạng thái chấm công (để nhân viên cập nhật giao diện khi có trạng thái chấm công mới)
-  employeeReceivedAttendanceStatus: AttendanceResponse
-  
+  employeeReceivedLeaveRequestStatus: LeaveRequest
+  employeeReceivedOvertimeRequestStatus: OvertimeRequest
+  employeeReceivedAttendanceStatus: Attendance
 
   # dành cho manager
-  # subscription để nhận yêu cầu nghỉ phép mới của nhân viên (để manager cập nhật giao diện khi có yêu cầu nghỉ phép mới)
-  managerReceivedLeaveRequest(jobId: ID!): LeaveRequestResponse
-  # subscription để nhận yêu cầu làm thêm giờ mới của nhân viên (để manager cập nhật giao diện khi có yêu cầu làm thêm giờ mới)
-  managerReceivedOvertimeRequest(jobId: ID!): OvertimeRequestResponse
-  # subscription để nhận chấm công mới của nhân viên (để manager cập nhật giao diện khi có chấm công mới)
-  managerReceivedAttendance(jobId: ID!): AttendanceResponse
-  # subscription để nhận thông tin người dùng mới tham gia công việc hoặc bị xóa khỏi công việc (để manager cập nhật giao diện khi có thay đổi nhân viên tham gia công việc)
-  managerReceivedUserJoinedJob(jobId: ID!): UserJoinedJobResponse
-  # subscription để nhận mã QR code động cho chấm công của công việc (để manager hiển thị mã QR code động cho nhân viên chấm công)
-  managerReceivedAttendanceQRCodeJob(jobId: ID!): QRCodeResponse
-  # thêm sau cho admin
+  managerReceivedLeaveRequest(jobId: ID!): LeaveRequest
+  managerReceivedOvertimeRequest(jobId: ID!): OvertimeRequest
+  managerReceivedAttendance(jobId: ID!): Attendance
+  managerReceivedUserJoinedJob(jobId: ID!): UserJoinedJob
+  managerReceivedAttendanceQRCodeJob(jobId: ID!): QRCodeData
 }
 `
 
