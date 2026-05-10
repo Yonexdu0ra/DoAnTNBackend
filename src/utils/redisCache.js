@@ -2,7 +2,7 @@ import { client } from '../configs/redisClient.js'
 
 // TTL constants (seconds)
 export const CACHE_TTL = {
-    STATISTICS: 300,      // 5 phút
+    STATISTICS: 50,      // 5 phút
     HOLIDAYS: 600,        // 10 phút
     PAGINATED_LIST: 180,  // 3 phút
 }

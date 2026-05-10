@@ -63,6 +63,35 @@ const getPositions = async (pagination, orderBy, filter, select) => {
     }
 }
 
+/**
+ * Lấy danh sách chức vụ theo phòng ban.
+ * 
+ * @param {string} departmentId
+ * @param {Object|null} pagination
+ * @param {Object|null} orderBy
+ * @param {Object|null} filter
+ * @param {Object|null} select
+ * @returns {Promise<PositionListResponse>}
+ */
+const getPositionsByDepartment = async (departmentId, pagination, orderBy, filter, select) => {
+    if (!departmentId) throw new Error('Thiếu ID phòng ban')
+
+    const filterWhere = buildPrismaFilter(filter, POSITION_FILTER_OPTIONS)
+    const extraWhere = { ...filterWhere, departmentId }
+
+    const findArgs = buildPagePaginationArgs(pagination, orderBy, select, extraWhere)
+
+    const [items, total] = await Promise.all([
+        prisma.position.findMany(findArgs),
+        prisma.position.count({ where: extraWhere }),
+    ])
+
+    return {
+        nodes: items,
+        pageInfo: buildPageInfo(pagination, total),
+    }
+}
+
 // ── Mutation ──
 
 /**
@@ -180,6 +209,7 @@ const deletePosition = async (input) => {
 export default {
     getPositionById,
     getPositions,
+    getPositionsByDepartment,
     createPosition,
     updatePosition,
     deletePosition,

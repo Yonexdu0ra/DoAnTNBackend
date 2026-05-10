@@ -4,6 +4,7 @@ import { PrismaPg } from '@prisma/adapter-pg'
 import { fileURLToPath } from 'url'
 import fs from 'fs'
 import path from 'path'
+import { generateId } from "../utils/generateId.js";
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
 
@@ -36,6 +37,17 @@ const adapter = new PrismaPg({
 
 const prisma = new PrismaClient({
     adapter,
+    // log: ['']
+}).$extends({
+    query: {
+        user: {
+            create: async ({ args, query, operation, model}) => {
+                const id = generateId(8)
+                args.data.code = `${process.env.PREFIX_COMPAPY}${id}`
+                return query(args);
+            }
+        }
+    }
 })
 
 export default prisma;

@@ -3,6 +3,7 @@
 // ═══════════════════════════════════════════
 
 import prisma from '../configs/prismaClient.js'
+import { createAuditLog } from '../utils/auditLog.js'
 import {
     buildPagePaginationArgs,
     buildPageInfo,
@@ -159,6 +160,15 @@ const createJob = async (input, userId) => {
         },
     })
 
+    createAuditLog({
+        userId,
+        action: 'CREATE_JOB',
+        resource: 'Job',
+        resourceId: job.id,
+        newValue: job,
+        status: 'SUCCESS'
+    });
+
     return job
 }
 
@@ -221,6 +231,16 @@ const updateJob = async (input, userId) => {
         data: updateData,
     })
 
+    createAuditLog({
+        userId,
+        action: 'UPDATE_JOB',
+        resource: 'Job',
+        resourceId: jobId,
+        oldValue: existing,
+        newValue: updatedJob,
+        status: 'SUCCESS'
+    });
+
     return updatedJob
 }
 
@@ -237,6 +257,15 @@ const deleteJob = async (input, userId) => {
     await prisma.job.delete({
         where: { id: jobId }
     })
+
+    createAuditLog({
+        userId,
+        action: 'DELETE_JOB',
+        resource: 'Job',
+        resourceId: jobId,
+        oldValue: existing,
+        status: 'SUCCESS'
+    });
 
     return {
     }

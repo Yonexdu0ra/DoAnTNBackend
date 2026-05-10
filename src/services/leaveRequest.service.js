@@ -5,6 +5,7 @@
 import prisma from '../configs/prismaClient.js'
 import fcmService from './fcm.services.js'
 import { pubsub, EVENTS } from '../configs/pubsub.js'
+import { createAuditLog } from '../utils/auditLog.js'
 import { isManagerOfJob, isAdmin, ensureJobManagementAccess, hasRecordAccess, ensureUserJoinedJob } from '../utils/permission.js'
 import {
     buildPagePaginationArgs,
@@ -141,10 +142,20 @@ const createLeaveRequest = async (userId, input) => {
         title: 'Yêu cầu nghỉ phép mới',
         body: `Có nhân viên vừa tạo đơn xin nghỉ phép trong dự án của bạn`
     }, {
-        type: 'REQUEST',
+        type: 'LEAVE',
         refType: 'LEAVE',
         refId: request.id
     })
+
+    // Ghi log tạo đơn
+    createAuditLog({
+        userId,
+        action: 'CREATE_LEAVE_REQUEST',
+        resource: 'LeaveRequest',
+        resourceId: request.id,
+        newValue: request,
+        status: 'SUCCESS'
+    });
 
     publishLeaveRequestToManager(jobId, request)
 
@@ -173,6 +184,17 @@ const cancelLeaveRequest = async (userId, input) => {
             reply: reason ? `Người dùng tự hủy: ${reason}` : 'Người dùng tự hủy đơn xin nghỉ phép'
         }
     })
+
+    // Ghi log huỷ đơn
+    createAuditLog({
+        userId,
+        action: 'CANCEL_LEAVE_REQUEST',
+        resource: 'LeaveRequest',
+        resourceId: leaveRequestId,
+        oldValue: existing,
+        newValue: updated,
+        status: 'SUCCESS'
+    });
 
     publishLeaveRequestToManager(existing.jobId, updated)
 

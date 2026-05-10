@@ -17,6 +17,6 @@ export default defineConfig({
   },
   datasource: {
     // url: `${process.env["AIVEN_DATABASE_SERVICE_URI"]}&sslrootcert=${certPath}`,
-    url: process.env["/DATABASE_URL"],
+    url: process.env["DATABASE_URL"],
   },
 });

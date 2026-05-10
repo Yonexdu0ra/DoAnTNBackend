@@ -4,6 +4,7 @@
 
 import prisma from '../configs/prismaClient.js'
 import { pubsub, EVENTS } from '../configs/pubsub.js'
+import { toUTCMidnight } from '../utils/dateUtils.js'
 import { decryptAES } from '../utils/aes.js'
 import {
     buildCursorPaginationArgs,
@@ -14,6 +15,7 @@ import {
     buildPrismaFilter,
 } from '../utils/pagination.js'
 import fcmService from './fcm.services.js'
+import { createAuditLog } from '../utils/auditLog.js'
 import { isManagerOfJob, isAdmin, ensureJobManagementAccess, hasRecordAccess, ensureUserJoinedJob } from '../utils/permission.js'
 import { calculateDistance } from '../utils/location.js'
 
@@ -245,7 +247,8 @@ const attendanceByQRCode = async (userId, input) => {
         distance: Math.round(distance),
         attendanceAt: now,
     }
-    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+    // Dùng UTC midnight để khớp với cột @db.Date (tránh lệch múi giờ)
+    const todayStart = toUTCMidnight(now)
 
     // 6. Tìm attendance hôm nay
     const existingAttendance = await prisma.attendance.findFirst({
@@ -282,6 +285,16 @@ const attendanceByQRCode = async (userId, input) => {
                 jobId,
             },
         })
+
+        // Ghi log chấm công check-in
+        createAuditLog({
+            userId,
+            action: 'CHECK_IN',
+            resource: 'Attendance',
+            resourceId: attendance.id,
+            newValue: attendance,
+            status: 'SUCCESS'
+        });
     } else if (qrType === 'CHECKOUT' || existingAttendance) {
         // ── Check-out ──
         if (qrType === 'CHECKOUT' && !existingAttendance) {
@@ -311,6 +324,17 @@ const attendanceByQRCode = async (userId, input) => {
                 fraudReason: updateFraud ? fraudReason : null,
             },
         })
+
+        // Ghi log chấm công check-out
+        createAuditLog({
+            userId,
+            action: 'CHECK_OUT',
+            resource: 'Attendance',
+            resourceId: attendance.id,
+            oldValue: existingAttendance,
+            newValue: attendance,
+            status: 'SUCCESS'
+        });
     }
 
     // 7. Publish qua WebSocket cho manager
@@ -334,7 +358,7 @@ const attendanceByQRCode = async (userId, input) => {
  * @returns {Promise<AttendanceResponse>}
  */
 const reviewAttendanceFraud = async (input, approverUserId) => {
-    const { attendanceId, isFraud, fraudReason } = input
+    const { attendanceId, isFraud, fraudReason, ipAddress } = input
 
     if (!attendanceId) throw new Error('Thiếu ID chấm công')
 
@@ -438,7 +462,7 @@ const markAttendanceAsFraudByJob = async (input, approverUserId) => {
  * @returns {Promise<AttendanceResponse>}
  */
 const createCompensatoryAttendanceForEmployee = async (actor, input) => {
-    const { userId, jobId, date, checkInAt, checkOutAt, isFraud, fraudReason, reason } = input
+    const { userId, jobId, date, checkInAt, checkOutAt, isFraud, fraudReason, reason, ipAddress } = input
 
     if (!userId || !jobId) throw new Error('Thiếu thông tin (userId, jobId)')
 
@@ -449,7 +473,8 @@ const createCompensatoryAttendanceForEmployee = async (actor, input) => {
     await ensureUserJoinedJob(userId, jobId, 'Nhân viên không thuộc công việc này')
 
     // Kiểm tra trùng lặp (đã có attendance cùng ngày, cùng job)
-    const attendanceDate = new Date(date)
+    // Normalize date về UTC midnight để khớp với cột @db.Date
+    const attendanceDate = toUTCMidnight(date)
     const existing = await prisma.attendance.findFirst({
         where: {
             userId,
@@ -467,7 +492,15 @@ const createCompensatoryAttendanceForEmployee = async (actor, input) => {
     const checkInType = determineAttendanceType(checkInAt, job, true)
     const checkOutType = checkOutAt ? determineAttendanceType(checkOutAt, job, false) : null
     const finalType = checkOutType ? combineAttendanceType(checkInType, checkOutType) : checkInType
-
+    const meta = {
+        ipAddress: ipAddress || null,
+        deviceId: null,
+        latitude: null,
+        longitude: null,
+        attendanceWith: 'COMPENSATORY',
+        distance: null,
+        attendanceAt: new Date(),
+    }
     const attendance = await prisma.attendance.create({
         data: {
             date: attendanceDate,
@@ -477,15 +510,8 @@ const createCompensatoryAttendanceForEmployee = async (actor, input) => {
             fraudReason: fraudReason || null,
             checkInAt: new Date(checkInAt),
             checkOutAt: checkOutAt ? new Date(checkOutAt) : null,
-            checkInMeta: {
-                ipAddress: null,
-                deviceId: null,
-                latitude: null,
-                longitude: null,
-                attendanceWith: 'COMPENSATORY',
-                distance: null,
-                attendanceAt: new Date(),
-            },
+            checkInMeta: meta,
+            checkOutMeta: meta,
             userId,
             jobId,
         },

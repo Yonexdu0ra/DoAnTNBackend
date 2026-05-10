@@ -139,6 +139,10 @@ const userReceivedNotification = {
     const userId = context.user.id
     return pubsub.asyncIterator([`${EVENTS.NOTIFICATION_RECEIVED}:${userId}`])
   },
+  resolve: (payload) => {
+    const data = payload?.userReceivedNotification
+    return data?.data || data
+  },
 }
 
 // ═══════════════════════════════════════════
@@ -151,6 +155,10 @@ const employeeReceivedLeaveRequestStatus = {
     const userId = context.user.id
     return pubsub.asyncIterator([EVENTS.EMPLOYEE_LEAVE_STATUS(userId)])
   },
+  resolve: (payload) => {
+    const data = payload?.employeeReceivedLeaveRequestStatus
+    return data?.data || data
+  },
 }
 
 const employeeReceivedOvertimeRequestStatus = {
@@ -159,6 +167,10 @@ const employeeReceivedOvertimeRequestStatus = {
     const userId = context.user.id
     return pubsub.asyncIterator([EVENTS.EMPLOYEE_OVERTIME_STATUS(userId)])
   },
+  resolve: (payload) => {
+    const data = payload?.employeeReceivedOvertimeRequestStatus
+    return data?.data || data
+  },
 }
 
 const employeeReceivedAttendanceStatus = {
@@ -166,6 +178,10 @@ const employeeReceivedAttendanceStatus = {
     ensureAuthorized(context, ROLE_ACCESS.common, 'employeeReceivedAttendanceStatus')
     const userId = context.user.id
     return pubsub.asyncIterator([EVENTS.EMPLOYEE_ATTENDANCE_STATUS(userId)])
+  },
+  resolve: (payload) => {
+    const data = payload?.employeeReceivedAttendanceStatus
+    return data?.data || data
   },
 }
 
@@ -178,12 +194,20 @@ const managerReceivedLeaveRequest = {
     ensureAuthorized(context, ROLE_ACCESS.managerAdmin, 'managerReceivedLeaveRequest')
     return pubsub.asyncIterator([EVENTS.NEW_LEAVE_REQUEST_BY_JOB(jobId)])
   },
+  resolve: (payload) => {
+    const data = payload?.managerReceivedLeaveRequest
+    return data?.data || data
+  },
 }
 
 const managerReceivedOvertimeRequest = {
   subscribe: (_, { jobId }, context) => {
     ensureAuthorized(context, ROLE_ACCESS.managerAdmin, 'managerReceivedOvertimeRequest')
     return pubsub.asyncIterator([EVENTS.NEW_OVERTIME_REQUEST_BY_JOB(jobId)])
+  },
+  resolve: (payload) => {
+    const data = payload?.managerReceivedOvertimeRequest
+    return data?.data || data
   },
 }
 
@@ -192,12 +216,20 @@ const managerReceivedAttendance = {
     ensureAuthorized(context, ROLE_ACCESS.managerAdmin, 'managerReceivedAttendance')
     return pubsub.asyncIterator([EVENTS.NEW_ATTENDANCE_BY_JOB(jobId)])
   },
+  resolve: (payload) => {
+    const data = payload?.managerReceivedAttendance
+    return data?.data || data
+  },
 }
 
 const managerReceivedUserJoinedJob = {
   subscribe: (_, { jobId }, context) => {
     ensureAuthorized(context, ROLE_ACCESS.managerAdmin, 'managerReceivedUserJoinedJob')
     return pubsub.asyncIterator([EVENTS.EMPLOYEE_IN_JOB_UPDATED(jobId)])
+  },
+  resolve: (payload) => {
+    const data = payload?.managerReceivedUserJoinedJob
+    return data?.data || data
   },
 }
 

@@ -50,7 +50,7 @@ const cancelOvertimeRequest = withAuthorization('cancelOvertimeRequest', ROLE_AC
 })
 
 const attendanceByQRCode = withAuthorization('attendanceByQRCode', ROLE_ACCESS.common, async (_, args, context) => {
-    const ipAddress = context.ipClient || context.ipAddress
+    const ipAddress = context.ip || context.ipClient || context.ipAddress
     args.input.ipAddress = ipAddress
     return attendanceService.attendanceByQRCode(context.user.id, args.input)
 })
@@ -72,6 +72,8 @@ const createCompensatoryOvertimeRequestForEmployee = withAuthorization('createCo
 })
 
 const createCompensatoryAttendanceForEmployee = withAuthorization('createCompensatoryAttendanceForEmployee', ROLE_ACCESS.managerAdmin, async (_, args, context) => {
+    const ipAddress = context.ip || context.ipClient || context.ipAddress
+    args.input.ipAddress = ipAddress
     return attendanceService.createCompensatoryAttendanceForEmployee(context.user, args.input)
 })
 
@@ -88,10 +90,14 @@ const removeEmployeeFromJob = withAuthorization('removeEmployeeFromJob', ROLE_AC
 })
 
 const reviewAttendanceFraud = withAuthorization('reviewAttendanceFraud', ROLE_ACCESS.managerAdmin, async (_, args, context) => {
+    const ip = context.ip || context.ipClient || context.ipAddress
+    args.input.ipAddress = ip
     return attendanceService.reviewAttendanceFraud(args.input, context.user.id)
 })
 
 const markAttendanceAsFraudByJob = withAuthorization('markAttendanceAsFraudByJob', ROLE_ACCESS.managerAdmin, async (_, args, context) => {
+    const ip = context.ip || context.ipClient || context.ipAddress
+    args.input.ipAddress = ip
     return attendanceService.markAttendanceAsFraudByJob(args.input, context.user.id)
 })
 

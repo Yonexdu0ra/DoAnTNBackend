@@ -162,8 +162,7 @@ enum StatisticsTrendType {
   WEEK
   MONTH
   YEAR
-}
-`
+}`
 const defineType = gql`
 # Vị trí công việc
 type Positon {
@@ -963,7 +962,7 @@ input UserFilterInput {
   email: StringFilterInput
   phone: StringFilterInput
   code: StringFilterInput
-  biometricEnabled: BooleanFilterInput
+  isLocked: BooleanFilterInput
   roleIn: [Role!]
   deleteAt: DateFilterInput
   createdAt: DateFilterInput
@@ -1473,6 +1472,7 @@ type Query {
   holidaysAdmin(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: HolidayFilterInput): HolidayConnection
   departments(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: DepartmentFilterInput): DepartmentConnection
   positions(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: PositionFilterInput): PositionConnection
+  positionsByDepartment(departmentId: ID!, pagination: PagePaginationInput, orderBy: SortOrderInput, filter: PositionFilterInput): PositionConnection
   adminDashboardStatistics(filter: DashboardStatisticsFilterInput): AdminDashboardStatisticsData
   configs(pagination: PagePaginationInput, orderBy: SortOrderInput, filter: ConfigFilterInput): ConfigConnection
 }

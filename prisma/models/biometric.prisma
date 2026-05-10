@@ -1,0 +1,10 @@
+model Biometric {
+    id        String   @id @default(uuid(7))
+    userId    String   @map("user_id")
+    type      String   @db.VarChar(100) // "Biometrics", "FaceID", "TouchID"
+    publicKey String   @map("public_key")
+    deviceId  String   @map("device_id")
+    user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+    createdAt DateTime @default(now()) @map("created_at")
+    updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+}

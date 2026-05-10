@@ -296,6 +296,11 @@ const positions = withAuthorization('positions', ROLE_ACCESS.admin, async (_, ar
     return positionService.getPositions(args.pagination, args.orderBy, args.filter, select)
 })
 
+const positionsByDepartment = withAuthorization('positionsByDepartment', ROLE_ACCESS.admin, async (_, args, context, info) => {
+    const select = getSelectPrisma(info)?.select?.nodes?.select
+    return positionService.getPositionsByDepartment(args.departmentId, args.pagination, args.orderBy, args.filter, select)
+})
+
 const adminDashboardStatistics = withAuthorization('adminDashboardStatistics', ROLE_ACCESS.admin, async (_, args, context, info) => {
     const select = getSelectPrisma(info)?.select
     return dashboardService.getAdminDashboardStatistics(args.filter, select)
@@ -355,6 +360,7 @@ const queryResolvers = {
     holidaysAdmin,
     departments,
     positions,
+    positionsByDepartment,
     adminDashboardStatistics,
     configs,
 }

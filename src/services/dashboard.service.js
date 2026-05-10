@@ -2,6 +2,7 @@ import crypto from 'crypto'
 import prisma from '../configs/prismaClient.js'
 import { getCache, setCache, CACHE_TTL, CACHE_KEYS } from '../utils/redisCache.js'
 import { LEAVE_TYPE_VI, ROLE_VI } from '../constants/enumVi.constants.js'
+import { toUTCMidnight, getUTCMonthStart, getUTCYearStart } from '../utils/dateUtils.js'
 
 const DEFAULT_ANNUAL_LEAVE_DAYS = 12
 const DAY_IN_MS = 24 * 60 * 60 * 1000
@@ -39,7 +40,7 @@ const getScopedJobId = (filter) => filter?.jobId || filter?.teamId || null
 
 const getDateRange = (filter) => {
     const now = new Date()
-    const fromDate = filter?.fromDate ? new Date(filter.fromDate) : new Date(now.getFullYear(), now.getMonth(), 1)
+    const fromDate = filter?.fromDate ? new Date(filter.fromDate) : new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
     const toDate = filter?.toDate ? new Date(filter.toDate) : now
 
     if (Number.isNaN(fromDate.getTime()) || Number.isNaN(toDate.getTime())) {
@@ -61,24 +62,23 @@ const getPreviousRange = (fromDate, toDate) => {
 }
 
 const getTodayRange = () => {
-    const today = new Date()
-    today.setHours(0, 0, 0, 0)
-    const tomorrow = new Date(today)
-    tomorrow.setDate(tomorrow.getDate() + 1)
+    const now = new Date()
+    const today = toUTCMidnight(now)
+    const tomorrow = new Date(today.getTime() + 24 * 60 * 60 * 1000)
     return { today, tomorrow }
 }
 
 const getCurrentMonthRange = () => {
     const now = new Date()
-    const fromDate = new Date(now.getFullYear(), now.getMonth(), 1)
-    const toDate = new Date(now.getFullYear(), now.getMonth() + 1, 1)
+    const fromDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1))
+    const toDate = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1))
     return { fromDate, toDate }
 }
 
 const getCurrentYearRange = () => {
     const now = new Date()
-    const fromDate = new Date(now.getFullYear(), 0, 1)
-    const toDate = new Date(now.getFullYear() + 1, 0, 1)
+    const fromDate = new Date(Date.UTC(now.getUTCFullYear(), 0, 1))
+    const toDate = new Date(Date.UTC(now.getUTCFullYear() + 1, 0, 1))
     return { fromDate, toDate }
 }
 
@@ -309,7 +309,7 @@ const buildAdminSummary = async ({ filter, fromDate, toDate, today, tomorrow, se
     }
 
     if (isFieldRequested(select, 'newHiresThisMonth')) {
-        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+        const monthStart = getUTCMonthStart(today)
         summary.newHiresThisMonth = await prisma.user.count({
             where: {
                 ...employeeWhere,
@@ -330,7 +330,7 @@ const buildAdminSummary = async ({ filter, fromDate, toDate, today, tomorrow, se
     }
 
     if (isFieldRequested(select, 'terminationsThisMonth')) {
-        const monthStart = new Date(today.getFullYear(), today.getMonth(), 1)
+        const monthStart = getUTCMonthStart(today)
         summary.terminationsThisMonth = await prisma.user.count({
             where: {
                 ...employeeWhere,
@@ -786,11 +786,14 @@ const buildAdminCharts = async ({ filter, fromDate, toDate, trendType, select })
     const leaveScopeWhere = buildScopedLeaveWhere(filter)
     const attendanceScopeWhere = buildScopedAttendanceWhere(filter)
 
+    // Nếu không filter theo ngày, mặc định mốc thời gian cho biểu đồ xu hướng là từ đầu năm đến hiện tại
+    const trendFromDate = filter?.fromDate ? fromDate : getUTCYearStart(toDate)
+
     if (isFieldRequested(select, 'workforceGrowth')) {
         const rows = await prisma.user.findMany({
             where: {
                 ...employeeWhere,
-                createdAt: { gte: fromDate, lte: toDate },
+                createdAt: { gte: trendFromDate, lte: toDate },
             },
             select: { createdAt: true },
             orderBy: { createdAt: 'asc' },
@@ -806,7 +809,7 @@ const buildAdminCharts = async ({ filter, fromDate, toDate, trendType, select })
         const rows = await prisma.leaveRequest.findMany({
             where: {
                 ...leaveScopeWhere,
-                createdAt: { gte: fromDate, lte: toDate },
+                createdAt: { gte: trendFromDate, lte: toDate },
             },
             select: { createdAt: true },
             orderBy: { createdAt: 'asc' },
@@ -900,12 +903,14 @@ const buildAdminCharts = async ({ filter, fromDate, toDate, trendType, select })
                 ...(scopedJobId ? { jobId: scopedJobId } : {}),
                 ...(filter?.departmentId ? { user: { departmentId: filter.departmentId } } : {}),
                 status: 'APPROVED',
-                createdAt: { gte: fromDate, lte: toDate },
+                date: { gte: trendFromDate, lte: toDate },
             },
-            select: { createdAt: true },
-            orderBy: { createdAt: 'asc' },
+            select: { date: true, minutes: true },
+            orderBy: { date: 'asc' },
         })
-        charts.overtimeTrend = groupCountByPeriod(rows.map((r) => r.createdAt), trendType)
+        
+        // Bạn có thể hiển thị số lượng đơn OT hoặc linh hoạt tính tổng số phút
+        charts.overtimeTrend = groupCountByPeriod(rows.map((r) => r.date), trendType)
     }
 
     if (isFieldRequested(select, 'positionDistribution')) {
@@ -926,7 +931,7 @@ const buildAdminCharts = async ({ filter, fromDate, toDate, trendType, select })
 
     if (isFieldRequested(select, 'attendanceTypeTrend')) {
         const rows = await prisma.attendance.findMany({
-            where: { ...attendanceScopeWhere, date: { gte: fromDate, lte: toDate } },
+            where: { ...attendanceScopeWhere, date: { gte: trendFromDate, lte: toDate } },
             select: { date: true, type: true },
             orderBy: { date: 'asc' },
         })
@@ -944,7 +949,7 @@ const buildAdminCharts = async ({ filter, fromDate, toDate, trendType, select })
 
     if (isFieldRequested(select, 'fraudTrend')) {
         const rows = await prisma.attendance.findMany({
-            where: { ...attendanceScopeWhere, date: { gte: fromDate, lte: toDate }, isFraud: true },
+            where: { ...attendanceScopeWhere, date: { gte: trendFromDate, lte: toDate }, isFraud: true },
             select: { date: true },
             orderBy: { date: 'asc' },
         })
@@ -1565,6 +1570,8 @@ const getManagerDashboardStatistics = async (userId, filter, select) => {
         tasks.push((async () => {
             const charts = {}
             const teamUserIds = await getTeamUserIds()
+            
+            const trendFromDate = filter?.fromDate ? fromDate : getUTCYearStart(toDate)
 
             if (isFieldRequested(chartsSelect, 'teamAttendanceTrend')) {
                 if (!teamUserIds.length) {
@@ -1573,7 +1580,7 @@ const getManagerDashboardStatistics = async (userId, filter, select) => {
                     const rows = await prisma.attendance.findMany({
                         where: {
                             userId: { in: teamUserIds },
-                            date: { gte: fromDate, lte: toDate },
+                            date: { gte: trendFromDate, lte: toDate },
                             ...(scopedJobId ? { jobId: scopedJobId } : {}),
                         },
                         select: { date: true },
@@ -1594,7 +1601,7 @@ const getManagerDashboardStatistics = async (userId, filter, select) => {
                     const rows = await prisma.leaveRequest.findMany({
                         where: {
                             userId: { in: teamUserIds },
-                            createdAt: { gte: fromDate, lte: toDate },
+                            createdAt: { gte: trendFromDate, lte: toDate },
                             ...(scopedJobId ? { jobId: scopedJobId } : {}),
                         },
                         select: { createdAt: true },
@@ -1611,10 +1618,10 @@ const getManagerDashboardStatistics = async (userId, filter, select) => {
             if (isFieldRequested(chartsSelect, 'teamOvertimeTrend')) {
                 if (!teamUserIds.length) { charts.teamOvertimeTrend = [] } else {
                     const rows = await prisma.overtimeRequest.findMany({
-                        where: { userId: { in: teamUserIds }, status: 'APPROVED', createdAt: { gte: fromDate, lte: toDate }, ...(scopedJobId ? { jobId: scopedJobId } : {}) },
-                        select: { createdAt: true }, orderBy: { createdAt: 'asc' },
+                        where: { userId: { in: teamUserIds }, status: 'APPROVED', date: { gte: trendFromDate, lte: toDate }, ...(scopedJobId ? { jobId: scopedJobId } : {}) },
+                        select: { date: true }, orderBy: { date: 'asc' },
                     })
-                    charts.teamOvertimeTrend = groupCountByPeriod(rows.map((r) => r.createdAt), trendType)
+                    charts.teamOvertimeTrend = groupCountByPeriod(rows.map((r) => r.date), trendType)
                 }
             }
 
@@ -1643,7 +1650,7 @@ const getManagerDashboardStatistics = async (userId, filter, select) => {
             if (isFieldRequested(chartsSelect, 'teamAttendanceTypeTrend')) {
                 if (!teamUserIds.length) { charts.teamAttendanceTypeTrend = [] } else {
                     const rows = await prisma.attendance.findMany({
-                        where: { userId: { in: teamUserIds }, date: { gte: fromDate, lte: toDate }, ...(scopedJobId ? { jobId: scopedJobId } : {}) },
+                        where: { userId: { in: teamUserIds }, date: { gte: trendFromDate, lte: toDate }, ...(scopedJobId ? { jobId: scopedJobId } : {}) },
                         select: { date: true, type: true }, orderBy: { date: 'asc' },
                     })
                     const seriesMap = new Map()
@@ -1667,7 +1674,7 @@ const getManagerDashboardStatistics = async (userId, filter, select) => {
             if (isFieldRequested(chartsSelect, 'teamWorkingHoursHeatmap')) {
                 if (!teamUserIds.length) { charts.teamWorkingHoursHeatmap = [] } else {
                     const rows = await prisma.attendance.findMany({
-                        where: { userId: { in: teamUserIds }, date: { gte: fromDate, lte: toDate }, checkInAt: { not: null }, checkOutAt: { not: null }, ...(scopedJobId ? { jobId: scopedJobId } : {}) },
+                        where: { userId: { in: teamUserIds }, date: { gte: trendFromDate, lte: toDate }, checkInAt: { not: null }, checkOutAt: { not: null }, ...(scopedJobId ? { jobId: scopedJobId } : {}) },
                         select: { date: true, checkInAt: true, checkOutAt: true }, orderBy: { date: 'asc' },
                     })
                     charts.teamWorkingHoursHeatmap = groupSumByPeriod(rows, 'DAY', (r) => r.date, (r) => { const s = new Date(r.checkInAt); const e = new Date(r.checkOutAt); return e > s ? (e - s) / 3600000 : 0 })

@@ -11,7 +11,6 @@ export const requireToken = async (req, res, next) => {
         // console.log(headers.authorization?.replace('Bearer ', ''));
 
         const token = headers.authorization?.replace('Bearer ', '') || cookies.access_token;
-        console.log(token);
 
         if (!token) throw new Error('TOKEN MISSING')
         const { decoded, reason } = verifyAccessTokenDetailed(token);
@@ -53,7 +52,6 @@ const requireRole = (role) => {
 
         } catch (error) {
             return res.status(error?.extensions?.http?.status || 401).json(error)
-
         }
     }
 }

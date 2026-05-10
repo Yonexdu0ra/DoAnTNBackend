@@ -23,6 +23,7 @@ import prisma from './configs/prismaClient.js';
 import cookieParser from 'cookie-parser';
 import { requireToken } from './middlewares/auth.middleware.js';
 
+
 const PORT = process.env.PORT || 3002;
 
 const app = express();
@@ -33,7 +34,6 @@ const isProduction = process.env.PRODUCT_MODE === 'production';
 
 // Tạo schema từ typeDefs và resolvers
 const schema = makeExecutableSchema({ typeDefs, resolvers });
-
 // WebSocket server cho Subscriptions
 const wsServer = new WebSocketServer({
   server: httpServer,
@@ -117,6 +117,7 @@ app.use(
       'https://qujs.online',
     ],
     credentials: true
+   
   }),
   express.json()
 );
@@ -128,8 +129,6 @@ app.use(
   requireToken,
   expressMiddleware(server, {
     context: async ({ req }) => {
-      console.log(req.user);
-      
       const ip = getClientIp(req);
       const isIntrospection =
         req.body?.operationName === 'IntrospectionQuery';

@@ -20,7 +20,7 @@ model User {
   devices   UserDevice[]
   department Department? @relation("DepartmentUsers", fields: [departmentId], references: [id])
   position   Position?   @relation("PositionUsers", fields: [positionId], references: [id])
-
+  biometrics Biometric[]
   jobManagers              JobManager[]
   userJoinedJobs           UserJoinedJob[]
   leaveRequests            LeaveRequest[]

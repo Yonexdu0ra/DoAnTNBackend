@@ -5,6 +5,7 @@
 import prisma from '../configs/prismaClient.js'
 import fcmService from './fcm.services.js'
 import { pubsub, EVENTS } from '../configs/pubsub.js'
+import { createAuditLog } from '../utils/auditLog.js'
 import { isManagerOfJob, isAdmin, ensureJobManagementAccess, hasRecordAccess, ensureUserJoinedJob } from '../utils/permission.js'
 import {
     buildPagePaginationArgs,
@@ -140,10 +141,20 @@ const createOvertimeRequest = async (userId, input) => {
         title: 'Yêu cầu làm thêm giờ mới',
         body: `Có nhân viên vừa tạo yêu cầu làm thêm giờ trong dự án`
     }, {
-        type: 'REQUEST',
+        type: 'OVERTIME',
         refType: 'OVERTIME',
         refId: request.id
     })
+
+    // Ghi log
+    createAuditLog({
+        userId,
+        action: 'CREATE_OVERTIME_REQUEST',
+        resource: 'OvertimeRequest',
+        resourceId: request.id,
+        newValue: request,
+        status: 'SUCCESS'
+    });
 
     publishOvertimeRequestToManager(jobId, request)
 
@@ -172,6 +183,16 @@ const cancelOvertimeRequest = async (userId, input) => {
             reply: reason ? `Người dùng tự hủy: ${reason}` : 'Người dùng tự hủy đơn xin làm thêm giờ'
         }
     })
+
+    createAuditLog({
+        userId,
+        action: 'CANCEL_OVERTIME_REQUEST',
+        resource: 'OvertimeRequest',
+        resourceId: overtimeRequestId,
+        oldValue: existing,
+        newValue: updated,
+        status: 'SUCCESS'
+    });
 
     publishOvertimeRequestToManager(existing.jobId, updated)
 

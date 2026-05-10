@@ -9,7 +9,11 @@ export const resolvers = {
     Date: new GraphQLScalarType({
         name: 'Date',
         parseValue(value) {
-            return new Date(value);
+            const date = new Date(value)
+            if (!process.env.TZ) {
+                date.setHours(date.getHours() + 7)
+            }
+            return date
         },
         serialize(value) {
             return new Date(value)?.toISOString();
