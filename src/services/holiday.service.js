@@ -89,6 +89,66 @@ const getHolidaysAdmin = async (pagination, orderBy, filter, select) => {
     }
 }
 
+/**
+ * Lấy danh sách ngày nghỉ dành riêng cho AI (chuẩn bảo mật và giới hạn dữ liệu).
+ */
+const getHolidaysForAI = async (args) => {
+    const { startDate, endDate, month, year, limit } = args || {}
+
+    // 1. Giới hạn số lượng bản ghi trả về (bảo mật chống tràn context của LLM)
+    const take = Math.min(Math.max(parseInt(limit) || 10, 1), 20)
+
+    // 2. Xác định chính xác khoảng thời gian tìm kiếm
+    let start = startDate ? new Date(startDate) : new Date()
+    let end = endDate ? new Date(endDate) : null
+
+    // Nếu AI truyền tham số theo tháng/năm
+    if (month && year) {
+        start = new Date(year, month - 1, 1)
+        end = new Date(year, month, 0, 23, 59, 59, 999)
+    }
+
+    // Nếu không có ngày kết thúc, mặc định tìm trong 1 năm tới
+    if (!end && !month) {
+        end = new Date(start)
+        end.setFullYear(end.getFullYear() + 1)
+    } else if (end) {
+        // Đảm bảo bao phủ trọn vẹn ngày kết thúc đến cuối ngày
+        end.setHours(23, 59, 59, 999) 
+    }
+
+    // Chống lỗi parse date không hợp lệ
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) {
+        return []
+    }
+
+    // 3. Logic truy vấn thời gian giao thoa (Overlap Date Range) chuẩn xác:
+    // Sự kiện xảy ra NẾU (Sự_kiện.Bắt_đầu <= Truy_vấn.Kết_thúc) VÀ (Sự_kiện.Kết_thúc >= Truy_vấn.Bắt_đầu)
+    const where = {
+        startDate: { lte: end },
+        endDate: { gte: start },
+    }
+
+    // 4. Chỉ select (trích xuất) những trường thực sự an toàn và cần thiết cho AI
+    // Tuyệt đối không query `*` hoặc trả về các relation nhạy cảm (như userId nếu có)
+    const items = await prisma.holiday.findMany({
+        where,
+        take,
+        orderBy: { startDate: 'asc' },
+        select: {
+            id: true,
+            name: true,
+            type: true,
+            startDate: true,
+            endDate: true,
+            description: true,
+            isPaid: true
+        }
+    })
+
+    return items
+}
+
 // ── Mutation ──
 
 /**
@@ -181,6 +241,7 @@ export default {
     getHolidayById,
     getHolidays,
     getHolidaysAdmin,
+    getHolidaysForAI,
     createHoliday,
     updateHoliday,
     deleteHoliday,

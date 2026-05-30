@@ -20,6 +20,8 @@ model Job {
   longitude Float
   radius    Float @default(50)
   // time stamps
+  ronateSeconds Int @default(5) @map("ronate_seconds")
+  expiredSeconds Int @default(10) @map("expired_seconds")
 
   maxMembers Int @default(0) @map("max_members") 
   createdAt DateTime @default(now()) @map("created_at")

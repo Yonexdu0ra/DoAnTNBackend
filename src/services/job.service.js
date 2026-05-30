@@ -271,11 +271,49 @@ const deleteJob = async (input, userId) => {
     }
 }
 
+/**
+ * Lấy danh sách công việc dành riêng cho AI (chuẩn bảo mật và giới hạn dữ liệu).
+ */
+const getJobsForAI = async (userId, args) => {
+    const { jobId, jobName } = args || {}
+
+    const where = {
+        userJoinedJobs: { some: { userId } }
+    }
+
+    if (jobId) {
+        where.id = jobId
+    } else if (jobName) {
+        where.title = { contains: jobName }
+    }
+
+    const items = await prisma.job.findMany({
+        where,
+        take: 10, // AI không nên đọc quá nhiều job
+        orderBy: { workStartTime: 'desc' },
+        select: {
+            id: true,
+            title: true,
+            address: true,
+            workStartTime: true,
+            workEndTime: true,
+            earlyCheckInMinutes: true,
+            lateCheckInMinutes: true,
+            earlyCheckOutMinutes: true,
+            lateCheckOutMinutes: true,
+            description: true,
+        }
+    })
+
+    return items
+}
+
 export default {
     getJobById,
     getJobs,
     getJobsByEmployee,
     getJobsByManager,
+    getJobsForAI,
     createJob,
     updateJob,
     deleteJob,

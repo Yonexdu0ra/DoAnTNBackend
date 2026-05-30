@@ -343,11 +343,11 @@ async function seedJobs(managers) {
 
                 workStartTime: makeTime(8, 0),
                 workEndTime: makeTime(17, 30),
+                //21.5851376,105.8008451
+                latitude: 21.5851376,
+                longitude: 105.8008451,
 
-                latitude: 21.0285,
-                longitude: 105.8542,
-
-                radius: 50,
+                radius: 10,
 
                 maxMembers: randomInt(20, 100),
 

@@ -747,8 +747,8 @@ const buildAdminAlerts = async ({ filter, today }) => {
         alerts.push({
             id: 'pending-leaves',
             type: 'LEAVE',
-            title: `${pendingLeaves} leave requests pending approval`,
-            description: 'There are leave requests waiting for review',
+            title: `${pendingLeaves} yêu cầu nghỉ phép đang chờ duyệt`,
+            description: 'Có những yêu cầu nghỉ phép đang chờ bạn duyệt',
             severity: pendingLeaves >= 10 ? 'high' : 'medium',
             isRead: false,
         })
@@ -758,8 +758,8 @@ const buildAdminAlerts = async ({ filter, today }) => {
         alerts.push({
             id: 'pending-overtime',
             type: 'OVERTIME',
-            title: `${pendingOvertime} overtime requests pending approval`,
-            description: 'There are overtime requests waiting for review',
+            title: `${pendingOvertime} yêu cầu làm thêm giờ đang chờ duyệt`,
+            description: 'Có những yêu cầu làm thêm giờ đang chờ bạn duyệt',
             severity: pendingOvertime >= 10 ? 'high' : 'medium',
             isRead: false,
         })
@@ -769,7 +769,7 @@ const buildAdminAlerts = async ({ filter, today }) => {
         alerts.push({
             id: `holiday-${holiday.id}`,
             type: 'HOLIDAY',
-            title: `Upcoming holiday: ${holiday.name}`,
+            title: `Ngày lễ sắp tới: ${holiday.name}`,
             description: holiday.description || '',
             severity: 'low',
             dueAt: holiday.startDate,
@@ -1522,8 +1522,8 @@ const getManagerDashboardStatistics = async (userId, filter, select) => {
                 alerts.push({
                     id: 'manager-pending-leaves',
                     type: 'LEAVE',
-                    title: `${pendingLeaves} team leave requests pending`,
-                    description: 'Review team leave requests',
+                    title: `${pendingLeaves} yêu cầu nghỉ phép đang chờ duyệt`,
+                    description: 'Có những yêu cầu nghỉ phép đang chờ bạn duyệt',
                     severity: pendingLeaves >= 5 ? 'high' : 'medium',
                     isRead: false,
                 })
@@ -1533,8 +1533,9 @@ const getManagerDashboardStatistics = async (userId, filter, select) => {
                 alerts.push({
                     id: 'manager-pending-overtime',
                     type: 'OVERTIME',
-                    title: `${pendingOvertime} team overtime requests pending`,
-                    description: 'Review team overtime requests',
+                    title: `${pendingOvertime} yêu cầu làm thêm giờ đang chờ duyệt`,
+                    description: 'Có những yêu cầu làm thêm giờ đang chờ bạn duyệt',
+                    description: 'Có những yêu cầu làm thêm giờ đang chờ bạn duyệt',
                     severity: pendingOvertime >= 5 ? 'high' : 'medium',
                     isRead: false,
                 })
@@ -1553,7 +1554,7 @@ const getManagerDashboardStatistics = async (userId, filter, select) => {
                 alerts.push({
                     id: `manager-holiday-${holiday.id}`,
                     type: 'HOLIDAY',
-                    title: `Upcoming holiday: ${holiday.name}`,
+                    title: `Ngày lễ sắp tới: ${holiday.name}`,
                     description: holiday.description || '',
                     severity: 'low',
                     dueAt: holiday.startDate,
@@ -2040,8 +2041,8 @@ const getEmployeeDashboardStatistics = async (userId, filter, select) => {
                 alerts.push({
                     id: 'employee-missing-attendance',
                     type: 'REMINDER',
-                    title: 'You have not checked in today',
-                    description: 'Please complete your attendance check-in',
+                    title: 'Bạn chưa điểm danh ngày hôm nay',
+                    description: 'Vui lòng hoàn thành điểm danh',
                     severity: 'high',
                     isRead: false,
                 })
@@ -2052,8 +2053,8 @@ const getEmployeeDashboardStatistics = async (userId, filter, select) => {
                 alerts.push({
                     id: 'employee-pending-leaves',
                     type: 'LEAVE',
-                    title: `${pending.pendingLeaves} leave requests pending`,
-                    description: 'Your leave request is waiting for approval',
+                    title: `${pending.pendingLeaves} yêu cầu nghỉ phép đang chờ xử lý`,
+                    description: 'Vui lòng kiểm tra yêu cầu nghỉ phép của bạn',
                     severity: 'low',
                     isRead: false,
                 })
@@ -2063,8 +2064,8 @@ const getEmployeeDashboardStatistics = async (userId, filter, select) => {
                 alerts.push({
                     id: 'employee-pending-overtime',
                     type: 'OVERTIME',
-                    title: `${pending.pendingOvertime} overtime requests pending`,
-                    description: 'Your overtime request is waiting for approval',
+                    title: `${pending.pendingOvertime} yêu cầu làm thêm giờ đang chờ xử lý`,
+                    description: 'Vui lòng kiểm tra yêu cầu làm thêm giờ của bạn',
                     severity: 'low',
                     isRead: false,
                 })

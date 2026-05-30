@@ -300,10 +300,57 @@ const createCompensatoryOvertimeRequestForEmployee = async (approverId, input) =
     return request
 }
 
+/**
+ * Lấy danh sách đơn làm thêm giờ dành riêng cho AI (chuẩn bảo mật và giới hạn dữ liệu).
+ */
+const getOvertimeRequestsForAI = async (userId, args) => {
+    const { jobId, jobName, status, limit } = args || {}
+
+    // 1. Giới hạn số lượng bản ghi trả về
+    const take = Math.min(Math.max(parseInt(limit) || 10, 1), 20)
+    
+    // 2. Chỉ lấy đơn của chính user đó
+    const where = { userId }
+
+    if (jobId) {
+        where.jobId = jobId
+    } else if (jobName) {
+        where.job = { title: { contains: jobName } }
+    }
+    if (status) {
+        where.status = status
+    }
+
+    // 3. Chỉ lấy các trường cần thiết cho AI
+    const items = await prisma.overtimeRequest.findMany({
+        where,
+        take,
+        orderBy: { createdAt: 'desc' },
+        select: {
+            id: true,
+            date: true,
+            startTime: true,
+            endTime: true,
+            minutes: true,
+            reason: true,
+            status: true,
+            reply: true,
+            createdAt: true,
+            approverAt: true,
+            job: {
+                select: { title: true }
+            }
+        }
+    })
+
+    return items
+}
+
 export default {
     getOvertimeRequestById,
     getOvertimeRequestsByEmployee,
     getOvertimeRequestsByJob,
+    getOvertimeRequestsForAI,
     createOvertimeRequest,
     cancelOvertimeRequest,
     reviewOvertimeRequest,

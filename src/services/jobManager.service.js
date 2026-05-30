@@ -20,13 +20,15 @@ const addManagerToJob = async (input, actorId) => {
     if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
         throw new Error('Thiếu danh sách ID người quản lý')
     }
-
+    console.log(userIds);
+    
     // Kiểm tra quyền (chỉ ADMIN mới được phân quyền Manager cho Job)
     const hasAccess = await isAdmin(actorId)
     if (!hasAccess) {
         throw new Error('Bạn không có quyền phân bổ quản lý cho công việc. Chỉ Admin được phép thực hiện chức năng này.')
     }
-
+    console.log("hasAccess", hasAccess);
+    
     const job = await prisma.job.findUnique({ where: { id: jobId } })
     if (!job) throw new Error('Không tìm thấy công việc')
 
@@ -37,8 +39,11 @@ const addManagerToJob = async (input, actorId) => {
             userId: { in: userIds }
         }
     })
-
+    
+    console.log(existingManagers);
+    
     const existingUserIds = existingManagers.map(m => m.userId)
+    
     const newUserIds = userIds.filter(id => !existingUserIds.includes(id))
 
     if (newUserIds.length === 0) {
@@ -102,6 +107,7 @@ const removeManagerFromJob = async (input, actorId) => {
         throw new Error('Thiếu danh sách ID quản lý')
     }
 
+    
     // Kiểm tra quyền (chỉ ADMIN)
     const hasAccess = await isAdmin(actorId)
     if (!hasAccess) {

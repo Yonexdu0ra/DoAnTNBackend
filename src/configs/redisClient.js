@@ -10,6 +10,10 @@ export const redisConfig = {
 export const client = new Redis(redisConfig);
 export const redisPub = new Redis(redisConfig);
 export const redisSub = new Redis(redisConfig);
+// const uri = process.env['UPSTASH_REDIS_URI'] || ''
+// export const client = new Redis(uri);
+// export const redisPub = new Redis(uri);
+// export const redisSub = new Redis(uri);
 
 
 client.on('error', err => console.log('Redis Client Error', err));

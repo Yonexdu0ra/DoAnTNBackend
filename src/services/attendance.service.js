@@ -539,11 +539,65 @@ const createCompensatoryAttendanceForEmployee = async (actor, input) => {
     return attendance
 }
 
+/**
+ * Lấy danh sách chấm công dành riêng cho AI (chuẩn bảo mật và giới hạn dữ liệu).
+ */
+const getAttendancesForAI = async (userId, args) => {
+    const { jobId, jobName, startDate, endDate, type, limit } = args || {}
+
+    // 1. Giới hạn số lượng bản ghi trả về
+    const take = Math.min(Math.max(parseInt(limit) || 10, 1), 20)
+    
+    // 2. Chỉ lấy chấm công của chính user đó
+    const where = { userId }
+
+    if (jobId) {
+        where.jobId = jobId
+    } else if (jobName) {
+        where.job = { title: { contains: jobName } }
+    }
+    
+    // Trạng thái (Đi trễ, về sớm, bình thường...)
+    if (type) {
+        where.type = type
+    }
+    
+    // Lọc theo thời gian (Từ ngày - đến ngày)
+    if (startDate || endDate) {
+        where.date = {}
+        if (startDate) where.date.gte = new Date(startDate)
+        if (endDate) where.date.lte = new Date(endDate)
+    }
+
+    // 3. Chỉ lấy các trường cần thiết cho AI
+    const items = await prisma.attendance.findMany({
+        where,
+        take,
+        orderBy: { date: 'desc' },
+        select: {
+            id: true,
+            date: true,
+            type: true,
+            checkInAt: true,
+            checkOutAt: true,
+            isFraud: true,
+            fraudReason: true,
+            createdAt: true,
+            job: {
+                select: { title: true }
+            }
+        }
+    })
+
+    return items
+}
+
 export default {
     getAttendanceById,
     getAttendancesByEmployeeByTime,
     getAttendancesByEmployee,
     getAttendancesByJob,
+    getAttendancesForAI,
     attendanceByQRCode,
     reviewAttendanceFraud,
     markAttendanceAsFraudByJob,
