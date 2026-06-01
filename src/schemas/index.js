@@ -298,7 +298,7 @@ type Job {
 }
 # Bảng liên kết giữa công việc và người quản lý (để hỗ trợ nhiều quản lý cho một công việc)
 type JobManager {
-  id: ID!
+  id: ID
   jobId: ID!
   userId: ID!
   job: Job
