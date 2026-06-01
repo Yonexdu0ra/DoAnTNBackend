@@ -46,7 +46,6 @@ const addManagerToJob = async (input, actorId) => {
     const existingUserIds = existingManagers.map(m => m.userId)
 
     const newUserIds = userIds.filter(id => !existingUserIds.includes(id))
-    console.log(newUserIds);
 
     if (newUserIds.length === 0) {
         return null
